@@ -1,0 +1,439 @@
+openapi: 3.1.0
+info:
+  title: LLM 自动选课系统 API
+  version: 0.1.0
+  description: AI 驱动的智能选课推荐平台 API 接口规范（系统不执行真实选课操作）
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: 开发环境
+
+paths:
+  /auth/login:
+    post:
+      summary: 用户登录
+      description: Session-based 认证登录（FR-09）
+      operationId: login
+      tags: [认证]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [student_no, password]
+              properties:
+                student_no:
+                  type: string
+                  description: 学号
+                password:
+                  type: string
+                  description: 密码
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    $ref: '#/components/schemas/Student'
+        '401':
+          description: 认证失败
+
+  /auth/logout:
+    post:
+      summary: 用户登出
+      operationId: logout
+      tags: [认证]
+      responses:
+        '200':
+          description: 登出成功
+
+  /conversation/chat:
+    post:
+      summary: 自然语言选课对话
+      description: 学生通过自然语言描述选课偏好，系统返回推荐课程方案（FR-01, FR-03, FR-10）
+      operationId: chat
+      tags: [对话]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  description: 学生的自然语言选课需求
+                conversation_id:
+                  type: string
+                  format: uuid
+                  description: 对话 ID（继续已有对话时传入）
+      responses:
+        '200':
+          description: 推荐结果（JSON 结构化格式）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '503':
+          description: LLM 服务不可用，已降级至关键词搜索
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+
+  /plans:
+    post:
+      summary: 收藏推荐方案
+      description: 将推荐方案保存到"我的方案"（FR-05）
+      operationId: savePlan
+      tags: [方案]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, course_ids]
+              properties:
+                name:
+                  type: string
+                  description: 方案名称
+                course_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: 课程 ID 列表
+                notes:
+                  type: string
+                  description: 备注
+      responses:
+        '201':
+          description: 收藏成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedPlan'
+
+    get:
+      summary: 获取我的方案列表
+      operationId: listPlans
+      tags: [方案]
+      responses:
+        '200':
+          description: 方案列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SavedPlan'
+
+  /plans/{plan_id}/export:
+    get:
+      summary: 导出方案为 PDF
+      description: 将收藏的方案导出为 PDF 文件（FR-05）
+      operationId: exportPlan
+      tags: [方案]
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: PDF 文件
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /plans/{plan_id}:
+    delete:
+      summary: 删除收藏方案
+      operationId: deletePlan
+      tags: [方案]
+      parameters:
+        - name: plan_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 删除成功
+
+  /courses/search:
+    get:
+      summary: 课程搜索（降级方案）
+      description: 当 LLM 不可用时的关键词搜索替代方案（FR-08）
+      operationId: searchCourses
+      tags: [课程]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 搜索关键词
+        - name: semester
+          in: query
+          schema:
+            type: string
+          description: 学期
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: 课程类别
+      responses:
+        '200':
+          description: 搜索结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  courses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Course'
+
+  /admin/courses/import:
+    post:
+      summary: 批量导入课程
+      description: 教务管理员批量导入课程数据，支持 CSV 和 Excel 格式（FR-06）
+      operationId: importCourses
+      tags: [管理]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV 或 Excel 课程数据文件（自动识别格式）
+      responses:
+        '200':
+          description: 导入结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                  failed:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row:
+                          type: integer
+                        message:
+                          type: string
+
+  /admin/rules:
+    post:
+      summary: 创建选课规则
+      description: 教务管理员设置选课规则（FR-07）
+      operationId: createRule
+      tags: [管理]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionRule'
+      responses:
+        '201':
+          description: 规则创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionRule'
+
+components:
+  schemas:
+    Student:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        student_no:
+          type: string
+        name:
+          type: string
+        major:
+          type: string
+        grade:
+          type: integer
+        role:
+          type: string
+          enum: [student, admin]
+
+    Course:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        course_no:
+          type: string
+        name:
+          type: string
+        credit:
+          type: number
+        instructor:
+          type: string
+        capacity:
+          type: integer
+        schedule:
+          type: array
+          items:
+            type: object
+            properties:
+              day_of_week:
+                type: integer
+              start_period:
+                type: string
+              end_period:
+                type: string
+              weeks:
+                type: array
+                items:
+                  type: integer
+        location:
+          type: string
+        campus:
+          type: string
+        category:
+          type: string
+        semester:
+          type: string
+
+    ChatResponse:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        reply:
+          type: string
+          description: LLM 自然语言回复
+        recommendations:
+          type: array
+          minItems: 3
+          items:
+            $ref: '#/components/schemas/RecommendationPlan'
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conflict'
+        degraded:
+          type: boolean
+          description: 是否为降级模式（LLM 不可用）
+
+    RecommendationPlan:
+      type: object
+      properties:
+        plan_name:
+          type: string
+          description: 方案名称（如"平衡方案"、"兴趣优先"）
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+        total_credits:
+          type: number
+        match_score:
+          type: number
+          description: 匹配度评分 0-100
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conflict'
+
+    Conflict:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [time, location, prerequisite, commute]
+        severity:
+          type: string
+          enum: [error, warning]
+        course_a:
+          type: string
+          format: uuid
+        course_b:
+          type: string
+          format: uuid
+        message:
+          type: string
+
+    SavedPlan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        course_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        total_credits:
+          type: number
+        match_score:
+          type: number
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SelectionRule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        max_credits:
+          type: integer
+        min_credits:
+          type: integer
+        enrollment_start:
+          type: string
+          format: date-time
+        enrollment_end:
+          type: string
+          format: date-time
+        semester:
+          type: string
+        priority_strategy:
+          type: string
+          enum: [credit, interest, major]

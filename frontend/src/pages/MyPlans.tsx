@@ -1,0 +1,195 @@
+import { useState, useEffect, useMemo } from 'react';
+import { listPlans, deletePlan, getSessionCourses } from '../services/api';
+import PlanExporter from '../components/PlanExporter/PlanExporter';
+import type { SavedPlan, SessionCourse } from '../types';
+
+const PAGE_SIZE = 10;
+
+function categoryCreditsSummary(plan: SavedPlan, courseMap: Map<string, SessionCourse>): string {
+  const map = new Map<string, number>();
+  for (const id of plan.course_ids) {
+    const course = courseMap.get(id);
+    if (course) {
+      const key = course.category || '其他';
+      map.set(key, (map.get(key) || 0) + course.credit);
+    }
+  }
+  if (map.size <= 1) return '';
+  return Array.from(map.entries())
+    .map(([cat, credits]) => `${cat} ${credits} 学分`)
+    .join(' · ');
+}
+
+function calcWeeklyPeriods(plan: SavedPlan, courseMap: Map<string, SessionCourse>): number {
+  let total = 0;
+  for (const id of plan.course_ids) {
+    const course = courseMap.get(id);
+    if (course) {
+      for (const slot of course.schedule) {
+        total += slot.end_period - slot.start_period;
+      }
+    }
+  }
+  return total;
+}
+
+export default function MyPlans() {
+  const [plans, setPlans] = useState<SavedPlan[]>([]);
+  const [sessionCourses, setSessionCourses] = useState<SessionCourse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    loadPlans();
+  }, []);
+
+  const loadPlans = async () => {
+    try {
+      const [res, courses] = await Promise.all([listPlans(), getSessionCourses()]);
+      const sorted = res.plans.sort(
+        (a: SavedPlan, b: SavedPlan) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setPlans(sorted);
+      if (courses) setSessionCourses(courses);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const courseMap = useMemo(() => {
+    const map = new Map<string, SessionCourse>();
+    for (const c of sessionCourses) {
+      if (c.id) map.set(c.id, c);
+    }
+    return map;
+  }, [sessionCourses]);
+
+  const handleDelete = async (planId: string) => {
+    if (!confirm('确定删除该方案？')) return;
+    await deletePlan(planId);
+    setPlans((prev) => prev.filter((p) => p.id !== planId));
+  };
+
+  const totalPages = Math.ceil(plans.length / PAGE_SIZE);
+  const pagedPlans = plans.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  if (loading) return <p>加载中...</p>;
+
+  return (
+    <div className="my-plans-page" style={{ padding: 'var(--spacing-lg)' }}>
+      <h2>我的方案</h2>
+      {plans.length === 0 ? (
+        <p>暂无收藏方案。在选课推荐页面收藏推荐方案后将显示在这里。</p>
+      ) : (
+        <>
+          <div className="plans-list" style={{ display: 'flex', flexDirection: 'row', gap: 'var(--spacing-md)' }}>
+            {pagedPlans.map((plan) => (
+              <div
+                key={plan.id}
+                className="plan-card"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 'var(--spacing-md)',
+                  backgroundColor: 'var(--color-surface)',
+                  boxShadow: 'var(--shadow-sm)',
+                  transition: 'transform var(--transition-normal), box-shadow var(--transition-normal)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                }}
+              >
+                <h3 style={{ margin: '0 0 var(--spacing-sm) 0' }}>{plan.name}</h3>
+                <p style={{ margin: '4px 0', color: 'var(--color-text-secondary)' }}>
+                  总学分：{plan.total_credits}{categoryCreditsSummary(plan, courseMap) && `（${categoryCreditsSummary(plan, courseMap)}）`} · {plan.course_ids.length} 门课程 · 每周 {calcWeeklyPeriods(plan, courseMap)} 节
+                </p>
+                {plan.match_score !== null && (
+                  <p style={{ margin: '4px 0', color: 'var(--color-text-secondary)' }}>匹配度：{plan.match_score}%</p>
+                )}
+                {plan.notes && <p style={{ margin: '4px 0', color: 'var(--color-text-secondary)' }}>备注：{plan.notes}</p>}
+                <p style={{ margin: '4px 0', color: 'var(--color-text-light)', fontSize: '0.9em' }}>
+                  收藏时间：{new Date(plan.created_at).toLocaleString()}
+                </p>
+                <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-sm)' }}>
+                  <PlanExporter plan={plan} courseMap={courseMap} />
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDelete(plan.id)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-danger)',
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-danger)',
+                      cursor: 'pointer',
+                      transition: 'background-color var(--transition-fast), color var(--transition-fast)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-danger)';
+                      e.currentTarget.style.color = '#fff';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                      e.currentTarget.style.color = 'var(--color-danger)';
+                    }}
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 'var(--spacing-sm)',
+                marginTop: 'var(--spacing-lg)',
+              }}
+            >
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
+                  backgroundColor: page === 1 ? 'var(--color-bg)' : 'var(--color-surface)',
+                  cursor: page === 1 ? 'default' : 'pointer',
+                  transition: 'var(--transition-fast)',
+                }}
+              >
+                上一页
+              </button>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
+                  backgroundColor: page === totalPages ? 'var(--color-bg)' : 'var(--color-surface)',
+                  cursor: page === totalPages ? 'default' : 'pointer',
+                  transition: 'var(--transition-fast)',
+                }}
+              >
+                下一页
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
