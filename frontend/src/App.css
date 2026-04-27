@@ -1,0 +1,299 @@
+/* ===== 导航栏 ===== */
+nav {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+nav a {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: 0.95em;
+    font-weight: 500;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+nav a:hover {
+    color: var(--color-primary);
+    background-color: var(--color-primary-bg);
+}
+
+nav a.active {
+    color: var(--color-primary);
+    background-color: var(--color-primary-bg);
+}
+
+/* ===== 页面容器 ===== */
+main {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: var(--spacing-md);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ===== 首页 ===== */
+.home-page {
+    text-align: center;
+    padding: var(--spacing-xl) 0;
+}
+
+.home-page h1 {
+    color: var(--color-primary);
+    font-size: 2.2em;
+    margin-bottom: var(--spacing-md);
+}
+
+.home-page p {
+    color: var(--color-text-secondary);
+    font-size: 1.1em;
+    max-width: 600px;
+    margin: 0 auto var(--spacing-xl);
+}
+
+.home-page .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-xl);
+    text-align: left;
+}
+
+.home-page .feature-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.home-page .feature-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.home-page .feature-card h3 {
+    color: var(--color-primary);
+    margin: 0 0 var(--spacing-sm);
+}
+
+.home-page .feature-card p {
+    color: var(--color-text-secondary);
+    font-size: 0.95em;
+}
+
+/* ===== 选课推荐页 ===== */
+.course-select-page {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: var(--spacing-md);
+    min-height: calc(100vh - 120px);
+}
+
+.course-select-page .chat-section {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.course-select-page .recommendations-section {
+    grid-column: span 2;
+}
+
+.course-select-page .recommendations-section h2 {
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-xs);
+    font-size: 1em;
+}
+
+.course-select-page .recommendations-section p {
+    color: var(--color-text-light);
+    font-size: 0.85em;
+}
+
+.course-select-page .recommendation-plan {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.course-select-page .recommendation-plan h3 {
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-xs);
+    font-size: 0.95em;
+}
+
+.course-select-page .recommendation-plan > p {
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+    font-size: 0.8em;
+}
+
+.course-select-page .course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 6px;
+}
+
+/* ===== 聊天面板 ===== */
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 500px;
+}
+
+.chat-panel .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.chat-panel .message {
+    max-width: 85%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: 0.95em;
+    line-height: 1.5;
+}
+
+.chat-panel .message.user {
+    align-self: flex-end;
+    background: var(--color-primary);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+
+.chat-panel .message.assistant {
+    align-self: flex-start;
+    background: var(--color-bg);
+    color: var(--color-text);
+    border-bottom-left-radius: 4px;
+}
+
+.chat-panel .message-content {
+    word-break: break-word;
+}
+
+.chat-panel .degraded-notice {
+    margin-top: var(--spacing-xs);
+    font-size: 0.8em;
+    color: var(--color-warning);
+    font-style: italic;
+}
+
+.chat-panel .chat-input {
+    display: flex;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-top: 1px solid var(--color-border);
+    background: var(--color-surface);
+}
+
+.chat-panel .chat-input input {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.95em;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.chat-panel .chat-input input:focus {
+    border-color: var(--color-primary);
+}
+
+.chat-panel .chat-input button {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.chat-panel .chat-input button:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+}
+
+.chat-panel .chat-input button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ===== 我的方案页 ===== */
+.my-plans-page h1 {
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-lg);
+}
+
+/* ===== 教务管理页 ===== */
+.admin-page h1 {
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-lg);
+}
+
+.admin-page section {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.admin-page section h2 {
+    color: var(--color-text);
+    margin: 0 0 var(--spacing-sm);
+}
+
+.admin-page section p {
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-md);
+}
+
+.admin-page input[type="file"] {
+    margin-bottom: var(--spacing-md);
+}
+
+.admin-page .import-result {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    background: var(--color-success-bg);
+    border: 1px solid var(--color-success);
+    margin-top: var(--spacing-md);
+}
+
+.admin-page .import-errors {
+    color: var(--color-danger);
+    margin-top: var(--spacing-sm);
+    padding-left: var(--spacing-lg);
+}
+
+/* ===== 课程表视图 ===== */
+.recommendation-plan .schedule-view {
+    margin-top: var(--spacing-sm);
+}

@@ -1,0 +1,100 @@
+.plan-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.plan-action-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 0.82em;
+  cursor: pointer;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-action-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-light);
+}
+
+.plan-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Favorite button */
+.favorite-btn {
+  font-size: 1.1em;
+  padding: 4px 8px;
+}
+
+.favorite-btn.favorited {
+  color: #f59e0b;
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.favorite-btn.favorited:hover {
+  background: #fef3c7;
+}
+
+/* Copy button */
+.copy-btn.copied {
+  color: #10b981;
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+/* Favorites section */
+.favorites-section {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.favorites-section h3 {
+  font-size: 0.9em;
+  margin: 0 0 8px;
+  color: var(--color-text-secondary);
+}
+
+.favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.favorite-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+}
+
+.favorite-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.favorite-item-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.favorite-item-meta {
+  color: var(--color-text-light);
+  font-size: 0.9em;
+}
