@@ -36,7 +36,11 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
     "campus": FieldDefinition("校区", [
         "校区", "campus", "area", "院区",
     ], False),
-    "category": FieldDefinition("分类", [
+    "subject": FieldDefinition("学科", [
+        "学科", "学科分类", "专业分类", "院系", "department",
+        "学科类别", "所属学科",
+    ], False),
+    "category": FieldDefinition("课程属性", [
         "分类", "类别", "category", "type", "kind",
         "课程属性", "课程类型", "课程分类", "课程性质",
     ], False),

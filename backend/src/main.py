@@ -1,3 +1,7 @@
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,6 +11,24 @@ from src.api.courses import router as courses_router
 from src.api.plan import router as plan_router
 from src.api.admin import router as admin_router
 from src.api.import_ import router as import_router
+
+# Logging: console + rotating file
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(
+            LOG_DIR / "app.log",
+            maxBytes=10 * 1024 * 1024,  # 10 MB
+            backupCount=5,
+            encoding="utf-8",
+        ),
+    ],
+)
 
 app = FastAPI(
     title="LLM 自动选课系统 API",

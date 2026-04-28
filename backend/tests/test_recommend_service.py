@@ -378,3 +378,97 @@ class TestFormatSessionCoursesForLLM:
 
         text = service._format_session_courses_for_llm([course])
         assert "CS201" in text
+
+
+class TestRecommendReason:
+    """Tests for LLM recommendation reason (T005/T006)."""
+
+    @pytest.mark.asyncio
+    async def test_reason_used_as_reply(self):
+        """When LLM returns reason, it should be used as the reply."""
+        db = AsyncMock()
+        course = _make_course()
+
+        class ReasonLLM:
+            def __init__(self):
+                self.call_count = 0
+
+            async def generate_structured(self, messages, *, schema):
+                self.call_count += 1
+                if self.call_count == 1:
+                    # Step 1: field selection
+                    return {"selected_fields": ["课程名称"]}
+                else:
+                    # Step 2: course filtering with reason
+                    return {"matching_indices": [0], "reason": "这些课程匹配您对数学的需求，高数是计算机专业核心课。"}
+
+            async def generate(self, messages, *, temperature=0.7):
+                return "test"
+
+            async def generate_stream(self, messages, *, temperature=0.7):
+                yield "test"
+
+        llm = ReasonLLM()
+        service = RecommendService(db, llm, session_courses=[course])
+        result = await service.recommend("推荐数学课")
+
+        assert "这些课程匹配您对数学的需求" in result["reply"]
+        assert "筛选出" not in result["reply"]
+
+    @pytest.mark.asyncio
+    async def test_fallback_template_when_no_reason(self):
+        """When LLM doesn't return reason, fallback to template."""
+        db = AsyncMock()
+        course = _make_course()
+
+        class NoReasonLLM:
+            def __init__(self):
+                self.call_count = 0
+
+            async def generate_structured(self, messages, *, schema):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"selected_fields": ["课程名称"]}
+                else:
+                    return {"matching_indices": [0]}  # no reason field
+
+            async def generate(self, messages, *, temperature=0.7):
+                return "test"
+
+            async def generate_stream(self, messages, *, temperature=0.7):
+                yield "test"
+
+        llm = NoReasonLLM()
+        service = RecommendService(db, llm, session_courses=[course])
+        result = await service.recommend("推荐数学课")
+
+        assert "根据您的需求，筛选出 1 门相关课程。" == result["reply"]
+
+    @pytest.mark.asyncio
+    async def test_fallback_template_when_empty_reason(self):
+        """When LLM returns empty reason string, fallback to template."""
+        db = AsyncMock()
+        course = _make_course()
+
+        class EmptyReasonLLM:
+            def __init__(self):
+                self.call_count = 0
+
+            async def generate_structured(self, messages, *, schema):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"selected_fields": ["课程名称"]}
+                else:
+                    return {"matching_indices": [0], "reason": ""}
+
+            async def generate(self, messages, *, temperature=0.7):
+                return "test"
+
+            async def generate_stream(self, messages, *, temperature=0.7):
+                yield "test"
+
+        llm = EmptyReasonLLM()
+        service = RecommendService(db, llm, session_courses=[course])
+        result = await service.recommend("推荐数学课")
+
+        assert "根据您的需求，筛选出 1 门相关课程。" == result["reply"]

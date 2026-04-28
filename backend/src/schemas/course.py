@@ -19,6 +19,7 @@ class CourseBase(BaseModel):
     schedule: list[ScheduleItem]
     location: str
     campus: str
+    subject: str = ""
     category: str
     description: str | None = None
     semester: str
@@ -47,6 +48,7 @@ class SessionCourse(BaseModel):
     schedule: list[ScheduleItem] = []
     location: str | None = None
     campus: str | None = None
+    subject: str | None = None
     category: str | None = None
     semester: str | None = None
     description: str | None = None

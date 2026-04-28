@@ -55,6 +55,7 @@ class MiMoProvider(LLMProvider):
         # Log prompt size for debugging
         total_chars = sum(len(m.get("content", "")) for m in full_messages)
         logger.info(f"[MIMO_REQUEST] messages={len(full_messages)}, total_chars={total_chars}")
+        logger.debug(f"[MIMO_REQUEST_BODY] {json.dumps(full_messages, ensure_ascii=False)}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -63,7 +64,7 @@ class MiMoProvider(LLMProvider):
                 json={
                     "model": settings.MIMO_MODEL,
                     "messages": full_messages,
-                    "temperature": 0.3,
+                    "temperature": 0.1,
                     "response_format": {"type": "json_object"},
                 },
                 timeout=60.0,
@@ -83,6 +84,7 @@ class MiMoProvider(LLMProvider):
                 )
                 raise ValueError(f"MiMo API returned empty response (finish_reason={finish_reason})")
             logger.info(f"[MIMO_OK] finish_reason={finish_reason}, content_len={len(content)}")
+            logger.debug(f"[MIMO_RESPONSE] {content}")
             try:
                 return json.loads(content)
             except json.JSONDecodeError as e:

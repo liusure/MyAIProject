@@ -20,6 +20,7 @@ class Course(Base):
     schedule: Mapped[dict] = mapped_column(JSONB, nullable=False)
     location: Mapped[str] = mapped_column(String(100), nullable=False)
     campus: Mapped[str] = mapped_column(String(50), nullable=False)
+    subject: Mapped[str] = mapped_column(String(50), nullable=True, default="")
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     semester: Mapped[str] = mapped_column(String(20), nullable=False)

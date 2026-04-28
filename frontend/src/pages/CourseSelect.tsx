@@ -1,4 +1,4 @@
-import {useState, useMemo} from 'react';
+import {useState, useMemo, useEffect} from 'react';
 import ChatPanel from '../components/ChatPanel/ChatPanel';
 import CourseCard from '../components/CourseCard/CourseCard';
 import ScheduleView from '../components/ScheduleView/ScheduleView';
@@ -96,6 +96,11 @@ export default function CourseSelect() {
 
     // Conflict swap state: per-plan selection and hover
     const [planStates, setPlanStates] = useState<Map<number, PlanSelectionState>>(new Map());
+
+    // Reset planStates when recommendations change to ensure default selection is applied
+    useEffect(() => {
+        setPlanStates(new Map());
+    }, [recommendations]);
 
     // Build conflict graphs for each plan
     const conflictGraphs = useMemo(() => {

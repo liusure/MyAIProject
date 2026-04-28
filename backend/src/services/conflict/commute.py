@@ -18,6 +18,9 @@ def detect_commute_conflicts(courses: list[dict]) -> list[ConflictItem]:
     conflicts = []
     for i, a in enumerate(courses):
         for b in courses[i + 1:]:
+            # Skip comparing a course with itself (same id)
+            if a.get("id") == b.get("id"):
+                continue
             for slot_a in a.get("schedule", []):
                 for slot_b in b.get("schedule", []):
                     if slot_a["day_of_week"] != slot_b["day_of_week"]:

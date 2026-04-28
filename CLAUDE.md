@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/016-llm-two-step-filter/plan.md`
+at `specs/018-default-course-display/plan.md`
 <!-- SPECKIT END -->
