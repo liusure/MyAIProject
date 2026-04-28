@@ -66,14 +66,6 @@ async def confirm_import(
     raw_data = SessionStore.get_raw_data(device_id) or body.raw_data
     courses, errors = ImportParser.apply_mapping(raw_data, body.mapping)
 
-    # LLM category inference when category column is missing
-    if "category" in body.mapping.unmapped_target:
-        course_names = [c["name"] for c in courses if c.get("name")]
-        inferred = await ImportAnalyzer.infer_categories(course_names)
-        for c in courses:
-            if not c.get("category") and c.get("name") in inferred:
-                c["category"] = inferred[c["name"]]
-
     # Parse schedule strings into ScheduleItem objects
     for c in courses:
         if isinstance(c.get("schedule"), str) and c["schedule"]:

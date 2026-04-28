@@ -100,6 +100,9 @@ main {
     min-height: calc(100vh - 120px);
 }
 
+.course-select-page .upload-section {
+}
+
 .course-select-page .chat-section {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -250,6 +253,12 @@ main {
     margin: 0 0 var(--spacing-lg);
 }
 
+.my-plans-page .plans-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--spacing-md);
+}
+
 /* ===== 教务管理页 ===== */
 .admin-page h1 {
     color: var(--color-text);
@@ -296,4 +305,300 @@ main {
 /* ===== 课程表视图 ===== */
 .recommendation-plan .schedule-view {
     margin-top: var(--spacing-sm);
+}
+
+/* ===== 收藏方案区域 ===== */
+.favorites-section {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.favorites-section h3 {
+    margin: 0 0 var(--spacing-md);
+    color: var(--color-text);
+    font-size: 1.1em;
+}
+
+.favorites-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.favorite-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.favorite-item:hover {
+    transform: translateX(2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.favorite-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.favorite-item-name {
+    font-weight: 500;
+    color: var(--color-text);
+    font-size: 0.95em;
+}
+
+.favorite-item-meta {
+    color: var(--color-text-secondary);
+    font-size: 0.8em;
+}
+
+.plan-action-btn {
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: 1.1em;
+}
+
+.plan-action-btn.favorite-btn.favorited {
+    color: #f59e0b;
+    border-color: #f59e0b;
+    background: #fef3c7;
+}
+
+.plan-action-btn.favorite-btn.favorited:hover {
+    background: #fde68a;
+}
+
+/* ===== 响应式设计 - 平板设备 (768px - 1024px) ===== */
+@media (max-width: 1024px) {
+    main {
+        padding: var(--spacing-sm);
+    }
+
+    .home-page h1 {
+        font-size: 1.8em;
+    }
+
+    .home-page .features {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .course-select-page {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+
+    .course-select-page .upload-section,
+    .course-select-page .chat-section,
+    .course-select-page .recommendations-section {
+        grid-column: 1;
+    }
+
+    .chat-panel {
+        min-height: 400px;
+    }
+
+    .course-select-page .course-list {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    }
+
+    .my-plans-page .plans-list {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+}
+
+/* ===== 响应式设计 - 手机设备 (≤768px) ===== */
+@media (max-width: 768px) {
+    nav {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        gap: var(--spacing-xs);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    nav a {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: 0.85em;
+        white-space: nowrap;
+    }
+
+    main {
+        padding: var(--spacing-xs);
+    }
+
+    .home-page {
+        padding: var(--spacing-lg) 0;
+    }
+
+    .home-page h1 {
+        font-size: 1.5em;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .home-page p {
+        font-size: 0.95em;
+        padding: 0 var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .home-page .features {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+        padding: 0 var(--spacing-sm);
+    }
+
+    .home-page .feature-card {
+        padding: var(--spacing-md);
+    }
+
+    .course-select-page {
+        min-height: auto;
+    }
+
+    .chat-panel {
+        min-height: 350px;
+        max-height: 60vh;
+    }
+
+    .chat-panel .message {
+        max-width: 90%;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: 0.9em;
+    }
+
+    .chat-panel .chat-input {
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+
+    .chat-panel .chat-input input {
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-size: 0.9em;
+    }
+
+    .chat-panel .chat-input button {
+        padding: var(--spacing-xs) var(--spacing-md);
+        font-size: 0.9em;
+    }
+
+    .course-select-page .course-list {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-xs);
+    }
+
+    .course-select-page .recommendation-plan {
+        padding: var(--spacing-xs);
+    }
+
+    .course-select-page .recommendation-plan h3 {
+        font-size: 0.9em;
+    }
+
+    .course-select-page .recommendation-plan > p {
+        font-size: 0.75em;
+    }
+
+    .my-plans-page .plans-list {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+
+    .plan-card {
+        padding: var(--spacing-sm) !important;
+    }
+
+    .plan-card h3 {
+        font-size: 1em !important;
+    }
+
+    .plan-card p {
+        font-size: 0.85em !important;
+    }
+
+    .favorite-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs);
+    }
+
+    .favorite-item-info {
+        width: 100%;
+    }
+
+    .plan-action-btn {
+        align-self: flex-end;
+    }
+
+    .admin-page section {
+        padding: var(--spacing-md);
+    }
+
+    .admin-page section h2 {
+        font-size: 1.1em;
+    }
+
+    .admin-page section p {
+        font-size: 0.9em;
+    }
+}
+
+/* ===== 响应式设计 - 小屏手机 (≤480px) ===== */
+@media (max-width: 480px) {
+    .home-page h1 {
+        font-size: 1.3em;
+    }
+
+    .home-page p {
+        font-size: 0.9em;
+    }
+
+    .chat-panel {
+        min-height: 300px;
+    }
+
+    .chat-panel .message {
+        max-width: 95%;
+        font-size: 0.85em;
+    }
+
+    .course-select-page .recommendations-section h2 {
+        font-size: 0.9em;
+    }
+
+    .favorites-section {
+        padding: var(--spacing-sm);
+    }
+
+    .favorites-section h3 {
+        font-size: 1em;
+    }
+
+    .favorite-item-name {
+        font-size: 0.9em;
+    }
+
+    .favorite-item-meta {
+        font-size: 0.75em;
+    }
+}
+
+/* ===== 横屏优化 ===== */
+@media (max-height: 600px) and (orientation: landscape) {
+    .chat-panel {
+        min-height: 250px;
+        max-height: 50vh;
+    }
 }

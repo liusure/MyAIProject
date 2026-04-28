@@ -3,6 +3,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
+  -webkit-overflow-scrolling: touch;
 }
 
 .schedule-grid {
@@ -142,4 +143,69 @@
 
 .conflict-item--warning {
   color: #e65100;
+}
+
+/* ===== 移动端优化 ===== */
+@media (max-width: 768px) {
+  .schedule-grid {
+    min-width: 500px;
+  }
+
+  .schedule-header {
+    font-size: 0.75em;
+    padding: var(--spacing-xs);
+  }
+
+  .schedule-time {
+    font-size: 0.65em;
+    min-height: 32px;
+  }
+
+  .schedule-cell {
+    min-height: 32px;
+  }
+
+  .schedule-course {
+    font-size: 0.7em;
+    padding: 1px 3px;
+  }
+
+  .schedule-unspecified {
+    padding: var(--spacing-xs);
+  }
+
+  .schedule-unspecified h4 {
+    font-size: 0.8em;
+  }
+
+  .schedule-unspecified-item {
+    font-size: 0.75em;
+    padding: 2px 6px;
+  }
+
+  .schedule-conflicts-summary h4 {
+    font-size: 0.8em;
+  }
+
+  .conflict-item {
+    font-size: 0.8em;
+  }
+}
+
+@media (max-width: 480px) {
+  .schedule-grid {
+    min-width: 450px;
+  }
+
+  .schedule-header {
+    font-size: 0.7em;
+  }
+
+  .schedule-time {
+    font-size: 0.6em;
+  }
+
+  .schedule-course {
+    font-size: 0.65em;
+  }
 }

@@ -98,3 +98,63 @@
   color: var(--color-text-light);
   font-size: 0.9em;
 }
+
+/* ===== 移动端优化 ===== */
+@media (max-width: 768px) {
+  .plan-actions {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .plan-action-btn {
+    padding: 3px 8px;
+    font-size: 0.78em;
+  }
+
+  .favorite-btn {
+    padding: 3px 6px;
+    font-size: 1em;
+  }
+
+  .favorites-section {
+    padding: 10px;
+  }
+
+  .favorites-section h3 {
+    font-size: 0.85em;
+  }
+
+  .favorite-item {
+    padding: 6px 8px;
+    font-size: 0.8em;
+  }
+
+  .favorite-item-name {
+    font-size: 0.95em;
+  }
+
+  .favorite-item-meta {
+    font-size: 0.85em;
+  }
+}
+
+@media (max-width: 480px) {
+  .plan-actions {
+    gap: 4px;
+  }
+
+  .plan-action-btn {
+    padding: 2px 6px;
+    font-size: 0.75em;
+  }
+
+  .favorite-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .favorite-item-info {
+    width: 100%;
+  }
+}

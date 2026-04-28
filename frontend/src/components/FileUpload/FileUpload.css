@@ -105,3 +105,55 @@
   background: var(--color-surface);
   color: var(--color-text);
 }
+
+/* ===== 移动端优化 ===== */
+@media (max-width: 768px) {
+  .file-upload {
+    padding: var(--spacing-lg);
+  }
+
+  .file-upload--loading,
+  .file-upload--preview,
+  .file-upload--done,
+  .file-upload--error {
+    padding: var(--spacing-md);
+  }
+
+  .file-upload__icon {
+    font-size: 1.5em;
+  }
+
+  .file-upload__text {
+    font-size: 0.95em;
+  }
+
+  .file-upload__hint {
+    font-size: 0.8em;
+  }
+
+  .file-upload__actions {
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .btn {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .file-upload__errors,
+  .file-upload__degradation {
+    font-size: 0.85em;
+    padding: var(--spacing-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .file-upload {
+    padding: var(--spacing-md);
+  }
+
+  .file-upload__text {
+    font-size: 0.9em;
+  }
+}

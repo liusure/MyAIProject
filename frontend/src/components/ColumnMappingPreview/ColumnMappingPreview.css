@@ -186,3 +186,69 @@
 .degradation-list li {
   margin-bottom: var(--spacing-xs);
 }
+
+/* ===== 移动端优化 ===== */
+@media (max-width: 768px) {
+  .mapping-table {
+    font-size: 0.8em;
+  }
+
+  .mapping-table th,
+  .mapping-table td {
+    padding: 2px 4px;
+  }
+
+  .confidence {
+    font-size: 0.8em;
+    padding: 1px 4px;
+  }
+
+  .unmapped-item {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: var(--spacing-xs);
+  }
+
+  .unmapped-field-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .unmapped-select {
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+    min-width: auto;
+  }
+
+  .field-info {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .mapping-section--success {
+    padding: var(--spacing-sm);
+  }
+
+  .success-message {
+    font-size: 0.85em;
+  }
+
+  .degradation-list {
+    font-size: 0.8em;
+  }
+}
+
+@media (max-width: 480px) {
+  .mapping-table {
+    font-size: 0.75em;
+  }
+
+  .unmapped-field-label {
+    font-size: 0.8em;
+  }
+
+  .field-info {
+    font-size: 0.75em;
+  }
+}

@@ -44,6 +44,48 @@ SUBJECT_FILTER_SCHEMA = {
     "required": ["matched_subjects"],
 }
 
+# T001: Chinese → English field name mapping for two-step filtering
+FIELD_NAME_MAP: dict[str, str] = {
+    "课程名称": "name",
+    "课程编号": "course_no",
+    "学分": "credit",
+    "教师": "instructor",
+    "容量": "capacity",
+    "上课时间": "schedule",
+    "地点": "location",
+    "校区": "campus",
+    "课程类别": "category",
+    "学期": "semester",
+    "课程描述": "description",
+}
+
+# T002: Schema for step 1 — LLM selects relevant fields from enum
+FIELD_SELECTION_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "selected_fields": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(FIELD_NAME_MAP.keys())},
+            "description": "与用户需求相关的课程字段名称列表，必须从给定列表中选择",
+            "minItems": 1,
+        }
+    },
+    "required": ["selected_fields"],
+}
+
+# T003: Schema for step 2 — LLM returns matching course indices
+FILTER_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "matching_indices": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "满足用户要求的课程序号列表（0-based 索引）",
+        }
+    },
+    "required": ["matching_indices"],
+}
+
 
 class RecommendService:
     """选课推荐服务"""
@@ -113,7 +155,222 @@ class RecommendService:
             logger.warning(f"[STEP1_SUBJECTS] LLM call failed: {type(e).__name__}: {e}, falling back to all courses")
             return courses
 
+    def _build_reduced_dataset(self, courses: list[SessionCourse], fields: list[str]) -> str:
+        """第二步数据准备：只包含选定字段 + 行索引，返回紧凑文本。"""
+        day_names = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日"}
+        lines: list[str] = []
+        for idx, c in enumerate(courses):
+            parts = [f"[{idx}]"]
+            for field in fields:
+                if field == "name":
+                    parts.append(c.name)
+                elif field == "course_no" and c.course_no:
+                    parts.append(f"编号:{c.course_no}")
+                elif field == "credit":
+                    parts.append(f"{c.credit}学分")
+                elif field == "instructor" and c.instructor:
+                    parts.append(c.instructor)
+                elif field == "capacity" and c.capacity:
+                    parts.append(f"容量:{c.capacity}")
+                elif field == "schedule" and c.schedule:
+                    schedule_str = ", ".join(
+                        f"周{day_names.get(s.day_of_week, '?')}({s.start_period}-{s.end_period}节)"
+                        for s in c.schedule
+                    )
+                    parts.append(schedule_str)
+                elif field == "location" and c.location:
+                    parts.append(c.location)
+                elif field == "campus" and c.campus:
+                    parts.append(c.campus)
+                elif field == "category" and c.category:
+                    parts.append(c.category)
+                elif field == "semester" and c.semester:
+                    parts.append(c.semester)
+                elif field == "description" and c.description:
+                    # Truncate description to avoid token bloat
+                    desc = c.description[:100]
+                    parts.append(desc)
+            lines.append(" | ".join(parts))
+        return "\n".join(lines)
+
+    async def _filter_courses(self, user_message: str, courses: list[SessionCourse]) -> list[SessionCourse]:
+        """第二步：发送精简数据 + 用户需求给 LLM，返回匹配的课程列表。"""
+        # Step 1: Select relevant fields
+        selected_fields = await self._select_fields(user_message)
+
+        # Build reduced dataset
+        reduced_data = self._build_reduced_dataset(courses, selected_fields)
+
+        system_prompt = (
+            "你是大学选课助手。根据学生的需求，从下方课程列表中筛选满足要求的课程。\n"
+            "每行课程以 [序号] 开头。只返回满足要求的课程序号。\n"
+            "重要规则：\n"
+            "1. 只返回序号，不要返回其他内容。\n"
+            "2. 如果没有课程满足要求，返回空列表。\n"
+            f"课程列表:\n{reduced_data}"
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        try:
+            payload_size = sum(len(m["content"]) for m in messages)
+            result = await self.llm.generate_structured(messages, schema=FILTER_SCHEMA)
+            matching_indices = result.get("matching_indices", [])
+            logger.info(f"[STEP2_FILTER] matching_indices={matching_indices}, total_courses={len(courses)}, payload_chars={payload_size}")
+
+            if not matching_indices:
+                logger.info("[STEP2_FILTER] empty result, returning empty list")
+                return []
+
+            # Resolve indices to full SessionCourse objects
+            matched: list[SessionCourse] = []
+            for idx in matching_indices:
+                if isinstance(idx, int) and 0 <= idx < len(courses):
+                    matched.append(courses[idx])
+                else:
+                    logger.warning(f"[STEP2_FILTER] invalid index: {idx}")
+
+            logger.info(f"[STEP2_FILTER] resolved {len(matched)} courses from {len(matching_indices)} indices")
+            return matched
+
+        except Exception as e:
+            logger.warning(f"[STEP2_FILTER] LLM call failed: {type(e).__name__}: {e}")
+            raise  # Let caller handle fallback
+
+    async def _select_fields(self, user_message: str) -> list[str]:
+        """第一步：发送用户需求和字段列表给 LLM，返回相关字段的英文属性名。失败时返回全部字段。"""
+        field_names_text = "\n".join(f"- {name}" for name in FIELD_NAME_MAP.keys())
+        system_prompt = (
+            "你是大学选课助手。根据学生的需求，从下方课程字段列表中选择与需求相关的字段。\n"
+            "只选择真正相关的字段，不要选择无关字段。\n"
+            "如果需求模糊（如'推荐好过的课'），至少选择课程名称字段。\n"
+            f"可选字段:\n{field_names_text}"
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+
+        try:
+            payload_size = sum(len(m["content"]) for m in messages)
+            result = await self.llm.generate_structured(messages, schema=FIELD_SELECTION_SCHEMA)
+            selected_cn = result.get("selected_fields", [])
+            logger.info(f"[STEP1_FIELDS] selected_cn={selected_cn}, payload_chars={payload_size}")
+
+            if not selected_cn:
+                logger.warning("[STEP1_FIELDS] empty selection, falling back to all fields")
+                return list(FIELD_NAME_MAP.values())
+
+            # Map Chinese names to English attribute names
+            selected_en = []
+            for cn_name in selected_cn:
+                en_name = FIELD_NAME_MAP.get(cn_name)
+                if en_name:
+                    selected_en.append(en_name)
+                else:
+                    logger.warning(f"[STEP1_FIELDS] unknown field name: {cn_name}")
+
+            if not selected_en:
+                logger.warning("[STEP1_FIELDS] no valid fields after mapping, falling back to all")
+                return list(FIELD_NAME_MAP.values())
+
+            logger.info(f"[STEP1_FIELDS] selected_en={selected_en}")
+            return selected_en
+
+        except Exception as e:
+            logger.warning(f"[STEP1_FIELDS] LLM call failed: {type(e).__name__}: {e}, falling back to all fields")
+            return list(FIELD_NAME_MAP.values())
+
     async def recommend(self, user_message: str, context: list[dict] | None = None) -> dict:
+        """推荐入口 — 两步决策树过滤，失败时回退到 recommend_legacy。"""
+        messages = (context or []) + [{"role": "user", "content": user_message}]
+
+        if not self.session_courses:
+            return {
+                "reply": "请先上传课表文件，然后再进行选课推荐。",
+                "recommendations": [],
+            }
+
+        all_courses = self.session_courses
+
+        # Two-step filtering with fallback
+        try:
+            matched_courses = await self._filter_courses(user_message, all_courses)
+        except Exception as e:
+            logger.error(f"[RECOMMEND] two-step flow failed: {type(e).__name__}: {e}, falling back to legacy")
+            return await self.recommend_legacy(user_message, context)
+
+        # Empty result — no retry
+        if not matched_courses:
+            return {
+                "reply": "抱歉，根据您的需求未找到匹配的课程。请尝试调整描述或放宽条件。",
+                "recommendations": [],
+            }
+
+        # Build recommendation plan from filtered courses
+        plan = await self._build_plan_from_courses(matched_courses, user_message)
+        if not plan:
+            logger.warning("[RECOMMEND] failed to build plan from matched courses, falling back to legacy")
+            return await self.recommend_legacy(user_message, context)
+
+        return {
+            "reply": f"根据您的需求，筛选出 {len(matched_courses)} 门相关课程。",
+            "recommendations": [plan],
+        }
+
+    async def _build_plan_from_courses(
+        self, courses: list[SessionCourse], user_message: str
+    ) -> RecommendationPlan | None:
+        """从筛选后的课程列表构建推荐方案。"""
+        if not courses:
+            return None
+
+        course_responses = []
+        for c in courses:
+            course_responses.append(CourseResponse(
+                id=uuid.UUID(c.id) if c.id else uuid.uuid4(),
+                course_no=c.course_no or "",
+                name=c.name,
+                credit=c.credit,
+                instructor=c.instructor or "",
+                capacity=c.capacity or 0,
+                schedule=[
+                    ScheduleItem(
+                        day_of_week=s.day_of_week,
+                        start_period=s.start_period,
+                        end_period=s.end_period,
+                        weeks=s.weeks,
+                    )
+                    for s in (c.schedule or [])
+                ],
+                location=c.location or "",
+                campus=c.campus or "",
+                category=c.category or "",
+                semester=c.semester or "",
+                is_active=True,
+            ))
+        total_credits = sum(c.credit for c in courses)
+
+        # Run conflict detection
+        conflict_dicts = [cr.model_dump() for cr in course_responses]
+        conflicts = []
+        try:
+            conflicts.extend(detect_time_conflicts(conflict_dicts))
+            conflicts.extend(detect_commute_conflicts(conflict_dicts))
+        except Exception as e:
+            logger.warning(f"Conflict detection failed: {e}")
+
+        return RecommendationPlan(
+            plan_name="筛选结果",
+            courses=course_responses,
+            total_credits=total_credits,
+            match_score=0,
+            conflicts=conflicts,
+        )
+
+    async def recommend_legacy(self, user_message: str, context: list[dict] | None = None) -> dict:
         messages = (context or []) + [{"role": "user", "content": user_message}]
 
         # Session courses only — no DB fallback
