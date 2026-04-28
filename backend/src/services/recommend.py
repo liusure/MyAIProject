@@ -87,8 +87,12 @@ FILTER_SCHEMA: dict = {
 }
 
 
+SYSTEM_PROMPT = "你是大学选课推荐助手。根据学生的需求推荐合适的课程。"
+MAX_COURSES_FOR_LLM = 200
+
+
 class RecommendService:
-    """选课推荐服务"""
+    """选课推荐服务 — 两步决策树过滤"""
 
     def __init__(
         self,
@@ -99,9 +103,6 @@ class RecommendService:
         self.db = db
         self.llm = llm
         self.session_courses = session_courses
-
-    # Max courses to send to LLM — avoid content filter and token overflow
-    MAX_COURSES_FOR_LLM = 200
 
     def _extract_subjects(self, courses: list[SessionCourse]) -> list[str]:
         """从课程列表中提取所有唯一的学科（category）值，去重排序，过滤空值。"""
@@ -156,15 +157,30 @@ class RecommendService:
             return courses
 
     def _build_reduced_dataset(self, courses: list[SessionCourse], fields: list[str]) -> str:
-        """第二步数据准备：只包含选定字段 + 行索引，返回紧凑文本。"""
+        """第二步数据准备：固定包含序号+课程名称+上课时间，再加上LLM选出的字段。"""
         day_names = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日"}
+
+        # 固定字段：课程名称、上课时间。从 LLM 选出的字段中去掉重复的
+        extra_fields = [f for f in fields if f not in ("name", "schedule")]
+
         lines: list[str] = []
         for idx, c in enumerate(courses):
             parts = [f"[{idx}]"]
-            for field in fields:
-                if field == "name":
-                    parts.append(c.name)
-                elif field == "course_no" and c.course_no:
+
+            # 固定：课程名称
+            parts.append(c.name)
+
+            # 固定：上课时间
+            if c.schedule:
+                schedule_str = ", ".join(
+                    f"周{day_names.get(s.day_of_week, '?')}({s.start_period}-{s.end_period}节)"
+                    for s in c.schedule
+                )
+                parts.append(schedule_str)
+
+            # LLM 选出的额外字段
+            for field in extra_fields:
+                if field == "course_no" and c.course_no:
                     parts.append(f"编号:{c.course_no}")
                 elif field == "credit":
                     parts.append(f"{c.credit}学分")
@@ -172,12 +188,6 @@ class RecommendService:
                     parts.append(c.instructor)
                 elif field == "capacity" and c.capacity:
                     parts.append(f"容量:{c.capacity}")
-                elif field == "schedule" and c.schedule:
-                    schedule_str = ", ".join(
-                        f"周{day_names.get(s.day_of_week, '?')}({s.start_period}-{s.end_period}节)"
-                        for s in c.schedule
-                    )
-                    parts.append(schedule_str)
                 elif field == "location" and c.location:
                     parts.append(c.location)
                 elif field == "campus" and c.campus:
@@ -187,31 +197,28 @@ class RecommendService:
                 elif field == "semester" and c.semester:
                     parts.append(c.semester)
                 elif field == "description" and c.description:
-                    # Truncate description to avoid token bloat
-                    desc = c.description[:100]
-                    parts.append(desc)
+                    parts.append(c.description[:100])
             lines.append(" | ".join(parts))
         return "\n".join(lines)
 
     async def _filter_courses(self, user_message: str, courses: list[SessionCourse]) -> list[SessionCourse]:
-        """第二步：发送精简数据 + 用户需求给 LLM，返回匹配的课程列表。"""
+        """第二步：让 LLM 从精简数据中筛选满足要求的课程，返回匹配的课程列表。"""
         # Step 1: Select relevant fields
         selected_fields = await self._select_fields(user_message)
 
         # Build reduced dataset
         reduced_data = self._build_reduced_dataset(courses, selected_fields)
 
-        system_prompt = (
-            "你是大学选课助手。根据学生的需求，从下方课程列表中筛选满足要求的课程。\n"
+        prompt = (
+            f"学生的需求是：{user_message}\n\n"
+            "请从下方课程列表中筛选满足要求的课程。\n"
             "每行课程以 [序号] 开头。只返回满足要求的课程序号。\n"
-            "重要规则：\n"
-            "1. 只返回序号，不要返回其他内容。\n"
-            "2. 如果没有课程满足要求，返回空列表。\n"
+            "如果没有课程满足要求，返回空列表。\n\n"
             f"课程列表:\n{reduced_data}"
         )
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
         ]
 
         try:
@@ -240,17 +247,18 @@ class RecommendService:
             raise  # Let caller handle fallback
 
     async def _select_fields(self, user_message: str) -> list[str]:
-        """第一步：发送用户需求和字段列表给 LLM，返回相关字段的英文属性名。失败时返回全部字段。"""
+        """第一步：让 LLM 根据用户需求判断需要哪些字段来过滤课程。"""
         field_names_text = "\n".join(f"- {name}" for name in FIELD_NAME_MAP.keys())
-        system_prompt = (
-            "你是大学选课助手。根据学生的需求，从下方课程字段列表中选择与需求相关的字段。\n"
+        prompt = (
+            f"学生的需求是：{user_message}\n\n"
+            "请判断：要满足这个需求，需要查看课程的哪些字段？\n"
             "只选择真正相关的字段，不要选择无关字段。\n"
-            "如果需求模糊（如'推荐好过的课'），至少选择课程名称字段。\n"
+            "如果需求模糊，则可不返回。\n\n"
             f"可选字段:\n{field_names_text}"
         )
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
         ]
 
         try:
@@ -285,8 +293,6 @@ class RecommendService:
 
     async def recommend(self, user_message: str, context: list[dict] | None = None) -> dict:
         """推荐入口 — 两步决策树过滤，失败时回退到 recommend_legacy。"""
-        messages = (context or []) + [{"role": "user", "content": user_message}]
-
         if not self.session_courses:
             return {
                 "reply": "请先上传课表文件，然后再进行选课推荐。",
@@ -310,7 +316,7 @@ class RecommendService:
             }
 
         # Build recommendation plan from filtered courses
-        plan = await self._build_plan_from_courses(matched_courses, user_message)
+        plan = await self._build_plan_from_courses(matched_courses)
         if not plan:
             logger.warning("[RECOMMEND] failed to build plan from matched courses, falling back to legacy")
             return await self.recommend_legacy(user_message, context)
@@ -321,7 +327,7 @@ class RecommendService:
         }
 
     async def _build_plan_from_courses(
-        self, courses: list[SessionCourse], user_message: str
+        self, courses: list[SessionCourse]
     ) -> RecommendationPlan | None:
         """从筛选后的课程列表构建推荐方案。"""
         if not courses:
@@ -386,7 +392,7 @@ class RecommendService:
         courses = await self._filter_by_subjects(all_courses, user_message)
 
         # Step 2 筛选后仍过多时，按关键词相关性排序取 Top N
-        if len(courses) > self.MAX_COURSES_FOR_LLM:
+        if len(courses) > MAX_COURSES_FOR_LLM:
             courses = self._filter_relevant(courses, user_message)
 
         # Step 2: 使用非敏感字段格式化课程信息
@@ -464,7 +470,7 @@ class RecommendService:
                     keywords.add(seg)
 
         if not keywords:
-            return courses[: self.MAX_COURSES_FOR_LLM]
+            return courses[: MAX_COURSES_FOR_LLM]
 
         # Score courses by keyword match
         scored: list[tuple[int, SessionCourse]] = []
@@ -478,11 +484,11 @@ class RecommendService:
 
         # Sort by score descending, take top MAX
         scored.sort(key=lambda x: x[0], reverse=True)
-        result = [c for _, c in scored[: self.MAX_COURSES_FOR_LLM]]
+        result = [c for _, c in scored[: MAX_COURSES_FOR_LLM]]
 
         # If no keyword matched at all, return first MAX (don't return empty)
         if scored and scored[0][0] == 0:
-            return courses[: self.MAX_COURSES_FOR_LLM]
+            return courses[: MAX_COURSES_FOR_LLM]
 
         return result
 
