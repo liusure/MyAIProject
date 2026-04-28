@@ -1,5 +1,6 @@
 import uuid
 import logging
+from collections.abc import AsyncIterator, Callable, Awaitable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,6 +64,10 @@ FILTER_SCHEMA: dict = {
             "description": "满足用户要求的课程序号列表（0-based 索引），最多20个，按相关度排序",
             "maxItems": 20,
         },
+        "plan_name": {
+            "type": "string",
+            "description": "推荐课程方案的名称",
+        },
         "reason": {
             "type": "string",
             "description": "推荐这些课程的理由，简要说明为什么它们匹配用户的需求",
@@ -78,6 +83,25 @@ FILTER_SCHEMA: dict = {
 }
 
 MAX_COURSES_FOR_LLM = 200
+
+# T004: Merged schema for combined field selection + subject matching
+FIELD_SUBJECT_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "selected_fields": {
+            "type": "array",
+            "items": {"type": "string", "enum": list(FIELD_NAME_MAP.keys())},
+            "description": "与用户需求相关的课程字段名称列表，必须从给定列表中选择",
+            "minItems": 1,
+        },
+        "matched_subjects": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "匹配用户需求的学科名称列表，必须从给定列表中选择。如果需求不涉及特定学科或未选择学科字段，返回空列表",
+        },
+    },
+    "required": ["selected_fields"],
+}
 
 
 class RecommendService:
@@ -150,18 +174,16 @@ class RecommendService:
         return sorted(subjects)
 
     async def _filter_courses(self, user_message: str, courses: list[SessionCourse]) -> tuple[list[SessionCourse], str, int]:
-        # Step 1: Select relevant fields
-        selected_fields = await self._select_fields(user_message)
+        # Step 1 (merged): Select relevant fields AND match subjects in one LLM call
+        subjects = self._extract_subjects(courses)
+        selected_fields, matched_subjects = await self._select_fields_and_subjects(user_message, subjects)
 
-        # Step 1.5: If subject is selected, pre-filter locally to reduce dataset
-        if "subject" in selected_fields:
-            subjects = self._extract_subjects(courses)
-            if len(subjects) > 1:
-                matched_subjects = await self._match_subjects(user_message, subjects)
-                if matched_subjects:
-                    courses = [c for c in courses if c.subject and c.subject.strip() in matched_subjects]
-                    logger.info(
-                        f"[PRE_FILTER] subject filter: {len(courses)} courses after filtering by {matched_subjects}")
+        # Pre-filter by matched subjects if applicable
+        if "subject" in selected_fields and matched_subjects:
+            filtered = [c for c in courses if c.subject and c.subject.strip() in matched_subjects]
+            if filtered:
+                courses = filtered
+                logger.info(f"[PRE_FILTER] subject filter: {len(courses)} courses after filtering by {matched_subjects}")
 
         # Build reduced dataset
         reduced_data = self._build_reduced_dataset(courses, selected_fields)
@@ -172,7 +194,7 @@ class RecommendService:
             "每行课程以 [序号] 开头。返回满足要求的课程序号。\n"
             "如果没有课程满足要求，返回空列表。\n\n"
             "严格要求：最多返回20个课程序号，按相关度从高到低排序。不要返回超过20个。\n\n"
-            "同时请在 reason 字段中简要说明推荐这些课程的理由，并在 match_score 字段给出你对推荐结果与学生需求匹配程度的评分（0-100）。\n\n"
+            "同时请在 plan_name 字段中为方案起一个名字 reason 字段中简要说明推荐这些课程的理由，并在 match_score 字段给出你对推荐结果与学生需求匹配程度的评分（0-100）。\n\n"
             f"课程列表:\n{reduced_data}"
         )
         messages = [
@@ -273,6 +295,47 @@ class RecommendService:
             logger.warning(f"[STEP1_FIELDS] LLM call failed: {type(e).__name__}: {e}, falling back to all fields")
             return []
 
+    async def _select_fields_and_subjects(
+        self, user_message: str, subjects: list[str]
+    ) -> tuple[list[str], set[str]]:
+        """合并步骤：让 LLM 同时选择相关字段和匹配学科，减少一次 LLM 调用。"""
+        field_names_text = "\n".join(f"- {name}" for name in FIELD_NAME_MAP.keys())
+        subjects_text = "\n".join(f"- {s}" for s in subjects)
+        prompt = (
+            "你是一个课程选择助手，你需要帮助学生选择满足需求，时间无冲突，课程规划合理的课程表。\n\n"
+            "不要返回有时间冲突的课程\n\n"
+            f"学生的需求是：{user_message}\n\n"
+            "请判断：\n"
+            "1. 要满足这个需求，需要查看课程的哪些字段？只选择真正相关的字段。\n"
+            "2. 从下方学科列表中选择与需求相关的学科。如果需求不涉及特定学科，返回空列表。\n\n"
+            f"可选字段:\n{field_names_text}\n\n"
+            f"可选学科:\n{subjects_text}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        logger.info(f"[MERGED_STEP] prompt_chars={len(prompt)}")
+
+        try:
+            result = await self.llm.generate_structured(messages, schema=FIELD_SUBJECT_SCHEMA)
+            selected_cn = result.get("selected_fields", [])
+            matched = result.get("matched_subjects", [])
+            logger.info(f"[MERGED_STEP] selected_cn={selected_cn}, matched_subjects={matched}")
+
+            # Map Chinese names to English attribute names
+            selected_en = []
+            for cn_name in selected_cn:
+                en_name = FIELD_NAME_MAP.get(cn_name)
+                if en_name:
+                    selected_en.append(en_name)
+                else:
+                    logger.warning(f"[MERGED_STEP] unknown field name: {cn_name}")
+
+            logger.info(f"[MERGED_STEP] selected_en={selected_en}")
+            return selected_en, set(matched) if matched else set()
+
+        except Exception as e:
+            logger.warning(f"[MERGED_STEP] LLM call failed: {type(e).__name__}: {e}, falling back")
+            return [], set()
+
     async def recommend(self, user_message: str, context: list[dict] | None = None) -> dict:
         """推荐入口 — 两步决策树过滤。"""
         if not self.session_courses:
@@ -295,6 +358,106 @@ class RecommendService:
             "reply": reply,
             "recommendations": [plan],
         }
+
+    async def recommend_stream(
+        self,
+        user_message: str,
+        context: list[dict] | None = None,
+        on_progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+    ) -> tuple[dict, AsyncIterator[str]]:
+        """推荐入口（流式版）— 返回 (结构化结果, 流式回复文字迭代器)。
+
+        结构化结果包含 recommendations、conflicts 等数据。
+        流式迭代器逐块产出回复文字。
+        """
+        if not self.session_courses:
+            result = {
+                "reply": "请先上传课表文件，然后再进行选课推荐。",
+                "recommendations": [],
+            }
+            async def _empty():
+                if False:
+                    yield ""
+            return result, _empty()
+
+        # Progress: analyzing
+        if on_progress:
+            await on_progress("analyzing", "正在分析你的选课偏好...")
+
+        subjects = self._extract_subjects(self.session_courses)
+        selected_fields, matched_subjects = await self._select_fields_and_subjects(user_message, subjects)
+
+        # Progress: filtering with identified conditions
+        if on_progress:
+            field_names = ", ".join(selected_fields) if selected_fields else "全部"
+            subject_info = ", ".join(sorted(matched_subjects)) if matched_subjects else "不限"
+            await on_progress("filtering", f"已识别筛选条件：字段={field_names}，学科={subject_info}")
+
+        # Pre-filter by subjects
+        courses = self.session_courses
+        if "subject" in selected_fields and matched_subjects:
+            filtered = [c for c in courses if c.subject and c.subject.strip() in matched_subjects]
+            if filtered:
+                courses = filtered
+
+        # Progress: building
+        if on_progress:
+            await on_progress("building", f"在 {len(courses)} 门课中筛选匹配方案...")
+
+        # Step 2: Filter courses
+        reduced_data = self._build_reduced_dataset(courses, selected_fields)
+        prompt = (
+            f"学生的需求是：{user_message}\n\n"
+            "请从下方课程列表中筛选满足要求的课程。\n"
+            "每行课程以 [序号] 开头。返回满足要求的课程序号。\n"
+            "如果没有课程满足要求，返回空列表。\n\n"
+            "严格要求：最多返回20个课程序号，按相关度从高到低排序。不要返回超过20个。\n\n"
+            "同时请在 plan_name 字段中为方案起一个名字 reason 字段中简要说明推荐这些课程的理由，并在 match_score 字段给出你对推荐结果与学生需求匹配程度的评分（0-100）。\n\n"
+            f"课程列表:\n{reduced_data}"
+        )
+        messages = [{"role": "user", "content": prompt}]
+
+        try:
+            result_data = await self.llm.generate_structured(messages, schema=FILTER_SCHEMA)
+            matching_indices = result_data.get("matching_indices", [])
+            reason = result_data.get("reason", "")
+            match_score = int(result_data.get("match_score", 0))
+        except Exception as e:
+            logger.warning(f"[STREAM_FILTER] LLM call failed: {type(e).__name__}: {e}")
+            raise
+
+        if not matching_indices:
+            result = {
+                "reply": "抱歉，根据您的需求未找到匹配的课程。请尝试调整描述或放宽条件。",
+                "recommendations": [],
+            }
+            async def _empty2():
+                if False:
+                    yield ""
+            return result, _empty2()
+
+        # Resolve indices
+        unique_indices = list(dict.fromkeys(matching_indices))
+        if len(unique_indices) > 20:
+            unique_indices = unique_indices[:20]
+        matched: list[SessionCourse] = []
+        for idx in unique_indices:
+            if isinstance(idx, int) and 0 <= idx < len(courses):
+                matched.append(courses[idx])
+
+        plan = await self._build_plan_from_courses(matched, match_score=match_score)
+        reply_text = reason if reason else f"根据您的需求，筛选出 {len(matched)} 门相关课程。"
+
+        result = {
+            "reply": reply_text,
+            "recommendations": [plan],
+        }
+
+        # Create streaming iterator for the reply text
+        async def _stream_reply():
+            yield reply_text
+
+        return result, _stream_reply()
 
     async def _build_plan_from_courses(
             self, courses: list[SessionCourse], match_score: int = 0

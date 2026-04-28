@@ -105,6 +105,11 @@ export interface ImportConfirmResponse {
   degradation: DegradationReport;
 }
 
+export interface RecommendationProgress {
+  stage: 'analyzing' | 'filtering' | 'building';
+  message: string;
+}
+
 export interface SessionCourse {
   id: string | null;
   name: string;

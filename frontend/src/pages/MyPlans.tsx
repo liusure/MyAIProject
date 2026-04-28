@@ -1,7 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { listPlans, deletePlan, getSessionCourses } from '../services/api';
 import PlanExporter from '../components/PlanExporter/PlanExporter';
-import type { SavedPlan, SessionCourse } from '../types';
+import ScheduleModal from '../components/ScheduleModal/ScheduleModal';
+import type { SavedPlan, SessionCourse, ScheduleSlot } from '../types';
+
+interface ScheduleViewCourse {
+  id: string;
+  name: string;
+  instructor?: string | null;
+  location?: string | null;
+  schedule: ScheduleSlot[];
+}
 
 const PAGE_SIZE = 10;
 
@@ -38,6 +47,9 @@ export default function MyPlans() {
   const [sessionCourses, setSessionCourses] = useState<SessionCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalPlanName, setModalPlanName] = useState('');
+  const [modalCourses, setModalCourses] = useState<ScheduleViewCourse[]>([]);
 
   useEffect(() => {
     loadPlans();
@@ -64,6 +76,19 @@ export default function MyPlans() {
     return map;
   }, [sessionCourses]);
 
+  const handleOpenSchedule = (plan: SavedPlan) => {
+    const courses: ScheduleViewCourse[] = [];
+    for (const id of plan.course_ids) {
+      const c = courseMap.get(id);
+      if (c && c.id) {
+        courses.push({ id: c.id, name: c.name, instructor: c.instructor, location: c.location, schedule: c.schedule });
+      }
+    }
+    setModalCourses(courses);
+    setModalPlanName(plan.name);
+    setModalOpen(true);
+  };
+
   const handleDelete = async (planId: string) => {
     if (!confirm('确定删除该方案？')) return;
     await deletePlan(planId);
@@ -76,6 +101,7 @@ export default function MyPlans() {
   if (loading) return <p>加载中...</p>;
 
   return (
+    <>
     <div className="my-plans-page" style={{ padding: 'var(--spacing-lg)' }}>
       <h2>我的方案</h2>
       {plans.length === 0 ? (
@@ -116,6 +142,31 @@ export default function MyPlans() {
                   收藏时间：{new Date(plan.created_at).toLocaleString()}
                 </p>
                 <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-sm)' }}>
+                  <button
+                    className="schedule-btn"
+                    onClick={() => handleOpenSchedule(plan)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-primary)',
+                      backgroundColor: 'var(--color-surface)',
+                      color: 'var(--color-primary)',
+                      cursor: 'pointer',
+                      transition: 'background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-primary)';
+                      e.currentTarget.style.color = '#fff';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                      e.currentTarget.style.color = 'var(--color-primary)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    课程表
+                  </button>
                   <PlanExporter plan={plan} courseMap={courseMap} />
                   <button
                     className="delete-btn"
@@ -191,5 +242,12 @@ export default function MyPlans() {
         </>
       )}
     </div>
+      <ScheduleModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        courses={modalCourses}
+        planName={modalPlanName}
+      />
+    </>
   );
 }

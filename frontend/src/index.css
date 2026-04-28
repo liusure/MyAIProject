@@ -132,8 +132,7 @@ code {
   button,
   .feature-card,
   .course-card,
-  .plan-card,
-  .favorite-item {
+  .plan-card {
     -webkit-tap-highlight-color: transparent;
   }
 

@@ -51,54 +51,6 @@
   background: #ecfdf5;
 }
 
-/* Favorites section */
-.favorites-section {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-
-.favorites-section h3 {
-  font-size: 0.9em;
-  margin: 0 0 8px;
-  color: var(--color-text-secondary);
-}
-
-.favorites-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.favorite-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 10px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.85em;
-}
-
-.favorite-item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.favorite-item-name {
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.favorite-item-meta {
-  color: var(--color-text-light);
-  font-size: 0.9em;
-}
-
 /* ===== 移动端优化 ===== */
 @media (max-width: 768px) {
   .plan-actions {
@@ -115,27 +67,6 @@
     padding: 3px 6px;
     font-size: 1em;
   }
-
-  .favorites-section {
-    padding: 10px;
-  }
-
-  .favorites-section h3 {
-    font-size: 0.85em;
-  }
-
-  .favorite-item {
-    padding: 6px 8px;
-    font-size: 0.8em;
-  }
-
-  .favorite-item-name {
-    font-size: 0.95em;
-  }
-
-  .favorite-item-meta {
-    font-size: 0.85em;
-  }
 }
 
 @media (max-width: 480px) {
@@ -146,15 +77,5 @@
   .plan-action-btn {
     padding: 2px 6px;
     font-size: 0.75em;
-  }
-
-  .favorite-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  .favorite-item-info {
-    width: 100%;
   }
 }

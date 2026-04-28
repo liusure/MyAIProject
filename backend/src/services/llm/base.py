@@ -17,3 +17,7 @@ class LLMProvider(ABC):
         """流式生成自然语言回复（逐 token 产出）"""
         result = await self.generate(messages, temperature=temperature)
         yield result
+
+    async def close(self) -> None:
+        """释放资源（如 HTTP 连接池）"""
+        pass

@@ -154,18 +154,45 @@ async def chat_stream(
             await conv_service.add_message(conversation, "assistant", cached["reply"], cached)
             return
 
-        # 单次调用 recommend 获取结构化推荐结果
+        # 使用 recommend_stream 获取推荐结果并流式输出回复
         degraded = False
+        reply_text = ""
         try:
             session_courses = SessionStore.get_courses(device_id)
             llm = LLMFactory.get_available()
             service = RecommendService(db, llm, session_courses=session_courses)
-            result = await service.recommend(req.message, context)
+
+            # on_progress 回调：发送 progress SSE 事件
+            async def send_progress(stage: str, message: str):
+                yield f"data: {json.dumps({'type': 'progress', 'stage': stage, 'message': message}, ensure_ascii=False)}\n\n"
+
+            # 注意：progress 事件需要在 event_generator 的上下文中 yield
+            # 由于 on_progress 是回调，我们需要收集 progress 事件再发送
+            progress_events: list[str] = []
+
+            async def collect_progress(stage: str, message: str):
+                progress_events.append(
+                    f"data: {json.dumps({'type': 'progress', 'stage': stage, 'message': message}, ensure_ascii=False)}\n\n"
+                )
+
+            result, reply_stream = await service.recommend_stream(req.message, context, on_progress=collect_progress)
+
+            # 发送收集到的 progress 事件
+            for evt in progress_events:
+                yield evt
+
+            # 流式发送回复文字
+            async for chunk in reply_stream:
+                reply_text += chunk
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+
         except ContentFilteredError:
             result = {
                 "reply": "抱歉，您的请求触发了内容安全策略。请尝试简化描述，例如「推荐计算机课程」。",
                 "recommendations": [],
             }
+            reply_text = result["reply"]
+            yield f"data: {json.dumps({'type': 'token', 'content': reply_text}, ensure_ascii=False)}\n\n"
             degraded = True
         except Exception as e:
             logger.error(f"Recommend failed, using fallback: {type(e).__name__}: {e}")
@@ -174,11 +201,8 @@ async def chat_stream(
             llm = FallbackLLMProvider()
             service = RecommendService(db, llm, session_courses=session_courses)
             result = await service.recommend(req.message, context)
-
-        # 流式发送 reply 字段（模拟流式体验）
-        reply_text = result.get("reply", "")
-        for char in reply_text:
-            yield f"data: {json.dumps({'type': 'token', 'content': char}, ensure_ascii=False)}\n\n"
+            reply_text = result.get("reply", "")
+            yield f"data: {json.dumps({'type': 'token', 'content': reply_text}, ensure_ascii=False)}\n\n"
 
         # 缓存 & 持久化（不缓存降级结果）
         serializable = _serialize_result(result)

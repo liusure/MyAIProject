@@ -4,35 +4,10 @@ import CourseCard from '../components/CourseCard/CourseCard';
 import ScheduleView from '../components/ScheduleView/ScheduleView';
 import PlanActions from '../components/PlanActions/PlanActions';
 import {FileUpload} from '../components/FileUpload/FileUpload';
-import type {ChatMessage, RecommendationPlan, Course, Conflict} from '../types';
-import {chatStream, savePlan, deletePlan} from '../services/api';
-
-/** 按课程名称合并，将同一课程的多个时间段合并到一个 card */
-function mergeCourses(courses: Course[]): Course[] {
-    const map = new Map<string, Course>();
-    for (const c of courses) {
-        const existing = map.get(c.name);
-        if (!existing) {
-            map.set(c.name, {...c});
-        } else {
-            // 合并 schedule，去重
-            const seen = new Set(existing.schedule.map(s => `${s.day_of_week}-${s.start_period}-${s.end_period}`));
-            for (const slot of c.schedule) {
-                const key = `${slot.day_of_week}-${slot.start_period}-${slot.end_period}`;
-                if (!seen.has(key)) {
-                    existing.schedule.push(slot);
-                    seen.add(key);
-                }
-            }
-            // 保留非空值
-            if (!existing.instructor && c.instructor) existing.instructor = c.instructor;
-            if (!existing.location && c.location) existing.location = c.location;
-            if (!existing.campus && c.campus) existing.campus = c.campus;
-            if (!existing.category && c.category) existing.category = c.category;
-        }
-    }
-    return [...map.values()];
-}
+import type {ChatMessage, RecommendationPlan, Course, Conflict, RecommendationProgress} from '../types';
+import {chatStream, savePlan, deletePlan, cancelCurrentStream} from '../services/api';
+import {useNavigate} from 'react-router-dom';
+import {mergeCourses} from '../utils/courseMerge';
 
 /** Build bidirectional conflict graph from conflict list */
 function buildConflictGraph(courses: Course[], conflicts: Conflict[]): Map<string, Set<string>> {
@@ -85,14 +60,16 @@ interface PlanSelectionState {
 }
 
 export default function CourseSelect() {
+    const navigate = useNavigate();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [recommendations, setRecommendations] = useState<RecommendationPlan[]>([]);
     const [conversationId, setConversationId] = useState<string | undefined>();
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [streamingContent, setStreamingContent] = useState('');
-    const [favorites, setFavorites] = useState<RecommendationPlan[]>([]);
+    const [progressMessages, setProgressMessages] = useState<RecommendationProgress[]>([]);
     const [savedPlanIds, setSavedPlanIds] = useState<Map<string, string>>(new Map());
+    const [toast, setToast] = useState<string | null>(null);
 
     // Conflict swap state: per-plan selection and hover
     const [planStates, setPlanStates] = useState<Map<number, PlanSelectionState>>(new Map());
@@ -166,12 +143,16 @@ export default function CourseSelect() {
         });
     };
 
+    const showToast = (msg: string) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 2000);
+    };
+
     const handleToggleFavorite = async (plan: RecommendationPlan) => {
         const key = `${plan.plan_name}-${plan.total_credits}`;
         const savedId = savedPlanIds.get(key);
 
         if (savedId) {
-            // Unfavorite: delete from backend
             try {
                 await deletePlan(savedId);
             } catch { /* ignore */ }
@@ -180,33 +161,42 @@ export default function CourseSelect() {
                 next.delete(key);
                 return next;
             });
-            setFavorites((prev) => prev.filter(
-                (f) => !(f.plan_name === plan.plan_name && f.total_credits === plan.total_credits)
-            ));
+            showToast('已取消收藏');
         } else {
-            // Favorite: save to backend
             const courseIds = plan.courses.map((c) => c.id);
             try {
                 const saved = await savePlan(plan.plan_name, courseIds);
                 setSavedPlanIds((prev) => new Map(prev).set(key, saved.id));
+                showToast('已收藏，可在"我的方案"中查看');
             } catch { /* ignore */ }
-            setFavorites((prev) => [...prev, plan]);
         }
     };
 
-    const isFavorited = (plan: RecommendationPlan) =>
-        favorites.some(
-            (f) => f.plan_name === plan.plan_name && f.total_credits === plan.total_credits
-        );
+    const isFavorited = (plan: RecommendationPlan) => {
+        const key = `${plan.plan_name}-${plan.total_credits}`;
+        return savedPlanIds.has(key);
+    };
 
     const handleSend = async (message: string) => {
+        cancelCurrentStream();
         setMessages((prev) => [...prev, {role: 'user', content: message}]);
         setLoading(true);
         setHasSearched(true);
         setStreamingContent('');
+        setProgressMessages([]);
 
         await chatStream(message, conversationId, {
+            onProgress: (stage, message) => {
+                setProgressMessages((prev) => {
+                    const existing = prev.find((p) => p.stage === stage);
+                    if (existing) {
+                        return prev.map((p) => (p.stage === stage ? {stage, message} : p));
+                    }
+                    return [...prev, {stage, message}];
+                });
+            },
             onToken: (content) => {
+                setProgressMessages([]);
                 setStreamingContent((prev) => prev + content);
             },
             onDone: (result) => {
@@ -249,6 +239,7 @@ export default function CourseSelect() {
                     loading={loading}
                     emptyResults={emptyResults}
                     streamingContent={streamingContent}
+                    progressMessages={progressMessages}
                 />
             </div>
             <div className="recommendations-section">
@@ -297,31 +288,32 @@ export default function CourseSelect() {
                         );
                     })
                 )}
-                {favorites.length > 0 && (
-                    <div className="favorites-section">
-                        <h3>收藏的方案（{favorites.length}）</h3>
-                        <div className="favorites-list">
-                            {favorites.map((plan, i) => (
-                                <div key={i} className="favorite-item">
-                                    <div className="favorite-item-info">
-                                        <span className="favorite-item-name">{plan.plan_name}</span>
-                                        <span className="favorite-item-meta">
-                                            匹配度 {plan.match_score}% · {plan.total_credits} 学分 · {plan.courses.length} 门课程
-                                        </span>
-                                    </div>
-                                    <button
-                                        className="plan-action-btn favorite-btn favorited"
-                                        onClick={() => handleToggleFavorite(plan)}
-                                        title="取消收藏"
-                                    >
-                                        ★
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
+            {toast && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '24px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--color-text)',
+                    color: 'var(--color-surface)',
+                    padding: '8px 20px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.9em',
+                    zIndex: 1000,
+                    opacity: 0.95,
+                }}>
+                    {toast}
+                    {toast.includes('已收藏') && (
+                        <span
+                            style={{marginLeft: 12, textDecoration: 'underline', cursor: 'pointer'}}
+                            onClick={() => navigate('/plans')}
+                        >
+                            查看
+                        </span>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

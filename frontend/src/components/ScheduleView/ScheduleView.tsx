@@ -62,7 +62,6 @@ export default function ScheduleView({ courses, conflicts = [] }: ScheduleViewPr
 
   const slotMap = useMemo(() => {
     const map = new Map<string, ScheduleCourse[]>();
-    console.log(coursesWithSchedule)
     for (const course of coursesWithSchedule) {
       for (const slot of course.schedule) {
         for (let p = slot.start_period; p < slot.end_period; p++) {
