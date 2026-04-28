@@ -11,27 +11,6 @@ from src.services.conflict.commute import detect_commute_conflicts
 
 logger = logging.getLogger(__name__)
 
-RECOMMENDATION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "reply": {"type": "string", "description": "给学生的自然语言回复"},
-        "recommendations": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "plan_name": {"type": "string"},
-                    "course_ids": {"type": "array", "items": {"type": "string"}},
-                    "reason": {"type": "string"},
-                    "match_score": {"type": "number"},
-                },
-            },
-        },
-    },
-    "required": ["reply", "recommendations"],
-}
-
 SUBJECT_FILTER_SCHEMA = {
     "type": "object",
     "properties": {
@@ -87,6 +66,12 @@ FILTER_SCHEMA: dict = {
         "reason": {
             "type": "string",
             "description": "推荐这些课程的理由，简要说明为什么它们匹配用户的需求",
+        },
+        "match_score": {
+            "type": "number",
+            "description": "推荐结果与用户需求的匹配程度，0-100之间的整数",
+            "minimum": 0,
+            "maximum": 100,
         },
     },
     "required": ["matching_indices"],
@@ -164,7 +149,7 @@ class RecommendService:
                 subjects.add(c.subject.strip())
         return sorted(subjects)
 
-    async def _filter_courses(self, user_message: str, courses: list[SessionCourse]) -> tuple[list[SessionCourse], str]:
+    async def _filter_courses(self, user_message: str, courses: list[SessionCourse]) -> tuple[list[SessionCourse], str, int]:
         # Step 1: Select relevant fields
         selected_fields = await self._select_fields(user_message)
 
@@ -184,12 +169,10 @@ class RecommendService:
         prompt = (
             f"学生的需求是：{user_message}\n\n"
             "请从下方课程列表中筛选满足要求的课程。\n"
-            "每行课程以 [序号] 开头。只返回满足要求的课程序号。\n"
-            "如果需求模糊，结合课程名称和常识自行判断。\n\n"
+            "每行课程以 [序号] 开头。返回满足要求的课程序号。\n"
             "如果没有课程满足要求，返回空列表。\n\n"
             "严格要求：最多返回20个课程序号，按相关度从高到低排序。不要返回超过20个。\n\n"
-            "同时请在 reason 字段中简要说明推荐这些课程的理由，"
-            "说明为什么它们匹配学生的需求（2-3句话）。\n\n"
+            "同时请在 reason 字段中简要说明推荐这些课程的理由，并在 match_score 字段给出你对推荐结果与学生需求匹配程度的评分（0-100）。\n\n"
             f"课程列表:\n{reduced_data}"
         )
         messages = [
@@ -201,13 +184,14 @@ class RecommendService:
             result = await self.llm.generate_structured(messages, schema=FILTER_SCHEMA)
             matching_indices = result.get("matching_indices", [])
             reason = result.get("reason", "")
+            match_score = int(result.get("match_score", 0))
             logger.info(
                 f"[STEP2_FILTER] matching_indices={matching_indices}, total_courses={len(courses)}, "
-                f"payload_chars={payload_size}, has_reason={bool(reason)}")
+                f"payload_chars={payload_size}, has_reason={bool(reason)}, match_score={match_score}")
 
             if not matching_indices:
                 logger.info("[STEP2_FILTER] empty result, returning empty list")
-                return [], reason
+                return [], reason, match_score
 
             # Deduplicate indices (LLM may return duplicates)
             unique_indices = list(dict.fromkeys(matching_indices))
@@ -226,7 +210,7 @@ class RecommendService:
                     logger.warning(f"[STEP2_FILTER] invalid index: {idx}")
 
             logger.info(f"[STEP2_FILTER] resolved {len(matched)} courses from {len(matching_indices)} indices")
-            return matched, reason
+            return matched, reason, match_score
 
         except Exception as e:
             logger.warning(f"[STEP2_FILTER] LLM call failed: {type(e).__name__}: {e}")
@@ -257,12 +241,10 @@ class RecommendService:
         field_names_text = "\n".join(f"- {name}" for name in FIELD_NAME_MAP.keys())
         prompt = (
             "你是一个课程选择助手，你需要帮助学生选择满足需求，时间无冲突，课程规划合理的课程表。\n\n"
-            "我将会分两步发送给你需要的数据，第一步由你判断所需字段，第二步按你的回复返回对应字段，最终由你返回推荐课程序号\n\n"
-            "注意这是一张周课程表，因此不要返回过多内容，不要返回有时间冲突的课程\n\n"
+            "不要返回有时间冲突的课程\n\n"
             f"学生的需求是：{user_message}\n\n"
             "请判断：要满足这个需求，需要查看课程的哪些字段？\n"
             "只选择真正相关的字段，不要选择无关字段。\n"
-            "如果需求模糊，则可不返回。\n\n"
             f"可选字段:\n{field_names_text}"
         )
         messages = [
@@ -299,7 +281,7 @@ class RecommendService:
                 "recommendations": [],
             }
 
-        matched_courses, reason = await self._filter_courses(user_message, self.session_courses)
+        matched_courses, reason, match_score = await self._filter_courses(user_message, self.session_courses)
 
         if not matched_courses:
             return {
@@ -307,7 +289,7 @@ class RecommendService:
                 "recommendations": [],
             }
 
-        plan = await self._build_plan_from_courses(matched_courses)
+        plan = await self._build_plan_from_courses(matched_courses, match_score=match_score)
         reply = reason if reason else f"根据您的需求，筛选出 {len(matched_courses)} 门相关课程。"
         return {
             "reply": reply,
@@ -315,12 +297,12 @@ class RecommendService:
         }
 
     async def _build_plan_from_courses(
-            self, courses: list[SessionCourse]
+            self, courses: list[SessionCourse], match_score: int = 0
     ) -> RecommendationPlan | None:
         """从筛选后的课程列表构建推荐方案（两步过滤结果）。"""
         if not courses:
             return None
-        return self._courses_to_plan(courses, plan_name="筛选结果")
+        return self._courses_to_plan(courses, plan_name="筛选结果", match_score=match_score)
 
     @staticmethod
     def _courses_to_plan(
@@ -374,41 +356,3 @@ class RecommendService:
             conflicts=conflicts,
         )
 
-    @staticmethod
-    def _match_courses_by_ids(
-            course_ids: list[str], courses: list[SessionCourse]
-    ) -> list[SessionCourse]:
-        """根据 LLM 返回的 course_ids 从课程列表中匹配课程。"""
-        matched = []
-        for c in courses:
-            for cid in course_ids:
-                if c.id and str(c.id) == cid:
-                    matched.append(c)
-                    break
-                if c.name == cid:
-                    matched.append(c)
-                    break
-                if c.course_no and c.course_no == cid:
-                    matched.append(c)
-                    break
-                if cid in c.name or c.name in cid:
-                    matched.append(c)
-                    break
-        return matched
-
-    async def _build_recommendation_plan(
-            self, rec: dict, courses: list[SessionCourse]
-    ) -> RecommendationPlan | None:
-        course_ids = rec.get("course_ids", [])
-        if not course_ids:
-            return None
-
-        matched = self._match_courses_by_ids(course_ids, courses)
-        if not matched:
-            return None
-
-        return self._courses_to_plan(
-            matched,
-            plan_name=rec.get("plan_name", "推荐方案"),
-            match_score=rec.get("match_score", 0),
-        )

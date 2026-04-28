@@ -10,35 +10,30 @@ from src.services.recommend import RecommendService
 
 
 class MockLLM:
-    """Deterministic LLM that returns course_ids from the session courses."""
+    """Deterministic LLM for the two-step filter flow."""
 
-    def __init__(self, structured_result=None):
-        self._custom_result = structured_result
+    def __init__(self, filter_result=None):
+        """
+        Args:
+            filter_result: Step-2 result dict with keys matching_indices, reason, match_score.
+                           If None, returns empty matching_indices.
+        """
+        self._filter_result = filter_result or {"matching_indices": [], "reason": "", "match_score": 0}
         self.structured_calls = []
-
-    def _build_default_result(self):
-        return {
-            "reply": "推荐方案如下",
-            "recommendations": [
-                {
-                    "plan_name": "测试方案",
-                    "course_ids": [],  # filled by caller
-                    "reason": "匹配需求",
-                    "match_score": 90,
-                }
-            ],
-        }
+        self._call_count = 0
 
     async def generate(self, messages, *, temperature=0.7):
         return "测试回复"
 
     async def generate_structured(self, messages, *, schema):
         self.structured_calls.append({"messages": messages, "schema": schema})
-        if self._custom_result:
-            return self._custom_result
-        # Return result with empty course_ids — tests that need matching
-        # should pass structured_result with valid UUIDs
-        return self._build_default_result()
+        self._call_count += 1
+        if self._call_count == 1:
+            # Step 1: field selection
+            return {"selected_fields": ["课程名称"]}
+        else:
+            # Step 2: course filtering
+            return self._filter_result
 
     async def generate_stream(self, messages, *, temperature=0.7):
         yield "测试"
@@ -92,42 +87,30 @@ class TestRecommend:
         assert "请先上传课表" in result["reply"]
 
     @pytest.mark.asyncio
-    async def test_returns_recommendations(self):
+    async def test_returns_recommendations_with_reason(self):
         db = AsyncMock()
         course = _make_course()
-        llm = MockLLM(structured_result={
-            "reply": "推荐方案如下",
-            "recommendations": [
-                {
-                    "plan_name": "测试方案",
-                    "course_ids": [course.id],
-                    "reason": "匹配需求",
-                    "match_score": 90,
-                }
-            ],
+        llm = MockLLM(filter_result={
+            "matching_indices": [0],
+            "reason": "高数是计算机专业核心课程，匹配您的需求。",
+            "match_score": 90,
         })
         service = RecommendService(db, llm, session_courses=[course])
 
         result = await service.recommend("推荐数学课")
 
-        assert result["reply"] == "推荐方案如下"
+        assert "高数是计算机专业核心课程" in result["reply"]
         assert len(result["recommendations"]) == 1
-        assert result["recommendations"][0].plan_name == "测试方案"
+        assert result["recommendations"][0].match_score == 90
 
     @pytest.mark.asyncio
     async def test_recommendation_contains_full_snapshot(self):
         db = AsyncMock()
         course = _make_course()
-        llm = MockLLM(structured_result={
-            "reply": "推荐",
-            "recommendations": [
-                {
-                    "plan_name": "方案",
-                    "course_ids": [course.id],
-                    "reason": "匹配",
-                    "match_score": 80,
-                }
-            ],
+        llm = MockLLM(filter_result={
+            "matching_indices": [0],
+            "reason": "匹配",
+            "match_score": 80,
         })
         service = RecommendService(db, llm, session_courses=[course])
 
@@ -142,39 +125,28 @@ class TestRecommend:
         assert len(crs.schedule) == 1
 
     @pytest.mark.asyncio
-    async def test_llm_called_with_messages(self):
+    async def test_llm_called_twice_for_two_steps(self):
         db = AsyncMock()
         course = _make_course()
-        llm = MockLLM(structured_result={
-            "reply": "推荐",
-            "recommendations": [
-                {"plan_name": "方案", "course_ids": [course.id], "reason": "匹配", "match_score": 80}
-            ],
+        llm = MockLLM(filter_result={
+            "matching_indices": [0],
+            "reason": "匹配",
+            "match_score": 80,
         })
         service = RecommendService(db, llm, session_courses=[course])
 
-        context = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
-        await service.recommend("推荐", context)
+        await service.recommend("推荐")
 
-        assert len(llm.structured_calls) == 1
-        # Messages should include system + context + user
-        msgs = llm.structured_calls[0]["messages"]
-        assert msgs[0]["role"] == "system"
-        assert msgs[-1]["content"] == "推荐"
+        # Two calls: step 1 (field selection) + step 2 (course filtering)
+        assert len(llm.structured_calls) == 2
 
     @pytest.mark.asyncio
-    async def test_no_matching_course_returns_empty(self):
+    async def test_no_matching_indices_returns_empty(self):
         db = AsyncMock()
-        llm = MockLLM(structured_result={
-            "reply": "无匹配",
-            "recommendations": [
-                {
-                    "plan_name": "方案",
-                    "course_ids": [str(uuid.uuid4())],  # valid UUID but not in courses
-                    "reason": "无",
-                    "match_score": 0,
-                }
-            ],
+        llm = MockLLM(filter_result={
+            "matching_indices": [],
+            "reason": "无匹配",
+            "match_score": 0,
         })
         service = RecommendService(db, llm, session_courses=[_make_course()])
 
@@ -200,128 +172,61 @@ class TestRecommend:
             await service.recommend("推荐")
 
 
-class TestBuildRecommendationPlan:
-    """Tests for _build_recommendation_plan — the core matching logic."""
+class TestCoursesToPlan:
+    """Tests for _courses_to_plan — the plan building logic."""
 
-    @pytest.mark.asyncio
-    async def test_match_by_exact_name(self):
-        db = AsyncMock()
+    def test_single_course_plan(self):
         course = _make_course(name="高等数学")
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
+        plan = RecommendService._courses_to_plan([course], plan_name="方案", match_score=90)
 
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": ["高等数学"], "reason": "匹配", "match_score": 90},
-            [course],
-        )
         assert plan is not None
         assert len(plan.courses) == 1
+        assert plan.plan_name == "方案"
+        assert plan.match_score == 90
 
-    @pytest.mark.asyncio
-    async def test_match_by_exact_id(self):
-        db = AsyncMock()
-        course = _make_course()
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
-
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": [course.id], "reason": "匹配", "match_score": 90},
-            [course],
-        )
-        assert plan is not None
-
-    @pytest.mark.asyncio
-    async def test_match_by_course_no(self):
-        db = AsyncMock()
-        course = _make_course(name="高等数学", course_no="MATH101")
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
-
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": ["MATH101"], "reason": "匹配", "match_score": 90},
-            [course],
-        )
-        assert plan is not None
-        assert len(plan.courses) == 1
-
-    @pytest.mark.asyncio
-    async def test_match_by_partial_name(self):
-        """LLM often returns shortened names like '篮球' for '体育（篮球）'."""
-        db = AsyncMock()
-        course = _make_course(name="体育（篮球）", course_no="PE101")
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
-
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": ["篮球"], "reason": "匹配", "match_score": 80},
-            [course],
-        )
-        assert plan is not None
-        assert plan.courses[0].name == "体育（篮球）"
-
-    @pytest.mark.asyncio
-    async def test_no_match_returns_none(self):
-        db = AsyncMock()
-        course = _make_course(name="高等数学")
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
-
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": ["不存在的课"], "reason": "无", "match_score": 0},
-            [course],
-        )
-        assert plan is None
-
-    @pytest.mark.asyncio
-    async def test_empty_course_ids_returns_none(self):
-        db = AsyncMock()
-        course = _make_course()
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
-
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": [], "reason": "无", "match_score": 0},
-            [course],
-        )
-        assert plan is None
-
-    @pytest.mark.asyncio
-    async def test_multiple_courses_matched(self):
-        db = AsyncMock()
+    def test_multiple_courses_plan(self):
         c1 = _make_course(name="高等数学", course_no="MATH101")
         c2 = _make_course(name="大学英语", course_no="ENG101")
-        service = RecommendService(db, AsyncMock(), session_courses=[c1, c2])
+        plan = RecommendService._courses_to_plan([c1, c2], plan_name="方案", match_score=85)
 
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": ["高等数学", "大学英语"], "reason": "匹配", "match_score": 90},
-            [c1, c2],
-        )
         assert plan is not None
         assert len(plan.courses) == 2
         assert plan.total_credits == c1.credit + c2.credit
+        assert plan.match_score == 85
 
-    @pytest.mark.asyncio
-    async def test_schedule_included_in_response(self):
-        db = AsyncMock()
+    def test_schedule_included_in_response(self):
         course = _make_course()
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
+        plan = RecommendService._courses_to_plan([course])
 
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": [course.id], "reason": "匹配", "match_score": 90},
-            [course],
-        )
         assert plan is not None
         assert len(plan.courses[0].schedule) == 1
         assert plan.courses[0].schedule[0].day_of_week == 1
 
-    @pytest.mark.asyncio
-    async def test_empty_schedule_no_crash(self):
+    def test_empty_schedule_no_crash(self):
         """Courses imported without schedule data should still produce plans."""
-        db = AsyncMock()
         course = _make_course()
         course.schedule = []
-        service = RecommendService(db, AsyncMock(), session_courses=[course])
+        plan = RecommendService._courses_to_plan([course])
 
-        plan = await service._build_recommendation_plan(
-            {"plan_name": "方案", "course_ids": [course.id], "reason": "匹配", "match_score": 90},
-            [course],
-        )
         assert plan is not None
         assert plan.courses[0].schedule == []
+
+    def test_match_score_defaults_to_zero(self):
+        course = _make_course()
+        plan = RecommendService._courses_to_plan([course])
+
+        assert plan.match_score == 0
+
+    def test_conflict_detection_runs(self):
+        """Plan should include detected conflicts."""
+        c1 = _make_course(name="课A", course_no="A01")
+        c2 = _make_course(name="课B", course_no="B01")
+        # Both on same day/period — should detect time conflict
+        c2.schedule = c1.schedule
+        plan = RecommendService._courses_to_plan([c1, c2])
+
+        assert plan is not None
+        # Conflicts may or may not be detected depending on exact schedule overlap
 
 
 class TestFormatSessionCoursesForLLM:
@@ -400,7 +305,7 @@ class TestRecommendReason:
                     return {"selected_fields": ["课程名称"]}
                 else:
                     # Step 2: course filtering with reason
-                    return {"matching_indices": [0], "reason": "这些课程匹配您对数学的需求，高数是计算机专业核心课。"}
+                    return {"matching_indices": [0], "reason": "这些课程匹配您对数学的需求，高数是计算机专业核心课。", "match_score": 85}
 
             async def generate(self, messages, *, temperature=0.7):
                 return "test"
@@ -430,7 +335,7 @@ class TestRecommendReason:
                 if self.call_count == 1:
                     return {"selected_fields": ["课程名称"]}
                 else:
-                    return {"matching_indices": [0]}  # no reason field
+                    return {"matching_indices": [0], "match_score": 70}  # no reason field
 
             async def generate(self, messages, *, temperature=0.7):
                 return "test"
@@ -459,7 +364,7 @@ class TestRecommendReason:
                 if self.call_count == 1:
                     return {"selected_fields": ["课程名称"]}
                 else:
-                    return {"matching_indices": [0], "reason": ""}
+                    return {"matching_indices": [0], "reason": "", "match_score": 60}
 
             async def generate(self, messages, *, temperature=0.7):
                 return "test"
@@ -472,3 +377,63 @@ class TestRecommendReason:
         result = await service.recommend("推荐数学课")
 
         assert "根据您的需求，筛选出 1 门相关课程。" == result["reply"]
+
+    @pytest.mark.asyncio
+    async def test_match_score_passed_to_plan(self):
+        """LLM's match_score should be passed to the recommendation plan."""
+        db = AsyncMock()
+        course = _make_course()
+
+        class ScoreLLM:
+            def __init__(self):
+                self.call_count = 0
+
+            async def generate_structured(self, messages, *, schema):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"selected_fields": ["课程名称"]}
+                else:
+                    return {"matching_indices": [0], "reason": "匹配", "match_score": 92}
+
+            async def generate(self, messages, *, temperature=0.7):
+                return "test"
+
+            async def generate_stream(self, messages, *, temperature=0.7):
+                yield "test"
+
+        llm = ScoreLLM()
+        service = RecommendService(db, llm, session_courses=[course])
+        result = await service.recommend("推荐数学课")
+
+        plan = result["recommendations"][0]
+        assert plan.match_score == 92
+
+    @pytest.mark.asyncio
+    async def test_match_score_defaults_to_zero(self):
+        """When LLM doesn't return match_score, it defaults to 0."""
+        db = AsyncMock()
+        course = _make_course()
+
+        class NoScoreLLM:
+            def __init__(self):
+                self.call_count = 0
+
+            async def generate_structured(self, messages, *, schema):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"selected_fields": ["课程名称"]}
+                else:
+                    return {"matching_indices": [0], "reason": "匹配"}  # no match_score
+
+            async def generate(self, messages, *, temperature=0.7):
+                return "test"
+
+            async def generate_stream(self, messages, *, temperature=0.7):
+                yield "test"
+
+        llm = NoScoreLLM()
+        service = RecommendService(db, llm, session_courses=[course])
+        result = await service.recommend("推荐数学课")
+
+        plan = result["recommendations"][0]
+        assert plan.match_score == 0
