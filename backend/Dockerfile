@@ -9,7 +9,7 @@ COPY src/ src/
 COPY alembic/ alembic/
 COPY alembic.ini .
 COPY entrypoint.sh .
-COPY .env .env
+
 RUN chmod +x entrypoint.sh
 
 CMD ["./entrypoint.sh"]
