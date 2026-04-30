@@ -13,6 +13,7 @@ function AppLayout() {
                 <Link to="/">首页</Link>
                 <Link to="/select">智能选课</Link>
                 <Link to="/plans">我的方案</Link>
+                <a className="nav-download" href="/2026年春季学期课表.xlsx" download>下载示例数据</a>
             </nav>
             <main>
                 <div style={{display: location.pathname === '/select' ? 'block' : 'none'}}>

@@ -32,6 +32,12 @@ nav a.active {
     background-color: var(--color-primary-bg);
 }
 
+nav .nav-download {
+    margin-left: auto;
+    color: var(--color-primary);
+    font-size: 0.85em;
+}
+
 /* ===== 页面容器 ===== */
 main {
     max-width: 1440px;
