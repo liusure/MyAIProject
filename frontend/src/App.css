@@ -307,61 +307,6 @@ main {
     margin-top: var(--spacing-sm);
 }
 
-/* ===== 收藏方案区域 ===== */
-.favorites-section {
-    margin-top: var(--spacing-lg);
-    padding: var(--spacing-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-}
-
-.favorites-section h3 {
-    margin: 0 0 var(--spacing-md);
-    color: var(--color-text);
-    font-size: 1.1em;
-}
-
-.favorites-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-}
-
-.favorite-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg);
-    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.favorite-item:hover {
-    transform: translateX(2px);
-    box-shadow: var(--shadow-sm);
-}
-
-.favorite-item-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: 1;
-}
-
-.favorite-item-name {
-    font-weight: 500;
-    color: var(--color-text);
-    font-size: 0.95em;
-}
-
-.favorite-item-meta {
-    color: var(--color-text-secondary);
-    font-size: 0.8em;
-}
-
 .plan-action-btn {
     padding: 6px 12px;
     border-radius: var(--radius-sm);
@@ -518,6 +463,7 @@ main {
 
     .plan-card {
         padding: var(--spacing-sm) !important;
+        max-width: 20%;
     }
 
     .plan-card h3 {
@@ -526,16 +472,6 @@ main {
 
     .plan-card p {
         font-size: 0.85em !important;
-    }
-
-    .favorite-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--spacing-xs);
-    }
-
-    .favorite-item-info {
-        width: 100%;
     }
 
     .plan-action-btn {
@@ -578,21 +514,6 @@ main {
         font-size: 0.9em;
     }
 
-    .favorites-section {
-        padding: var(--spacing-sm);
-    }
-
-    .favorites-section h3 {
-        font-size: 1em;
-    }
-
-    .favorite-item-name {
-        font-size: 0.9em;
-    }
-
-    .favorite-item-meta {
-        font-size: 0.75em;
-    }
 }
 
 /* ===== 横屏优化 ===== */

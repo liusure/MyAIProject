@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -154,18 +155,62 @@ async def chat_stream(
             await conv_service.add_message(conversation, "assistant", cached["reply"], cached)
             return
 
-        # 单次调用 recommend 获取结构化推荐结果
+        # 使用 recommend_stream 获取推荐结果并流式输出回复
         degraded = False
+        reply_text = ""
         try:
             session_courses = SessionStore.get_courses(device_id)
             llm = LLMFactory.get_available()
             service = RecommendService(db, llm, session_courses=session_courses)
-            result = await service.recommend(req.message, context)
+
+            # 使用 asyncio.Queue 实时传递 progress 事件
+            progress_queue: asyncio.Queue = asyncio.Queue()
+
+            async def collect_progress(stage: str, message: str):
+                await progress_queue.put(
+                    f"data: {json.dumps({'type': 'progress', 'stage': stage, 'message': message}, ensure_ascii=False)}\n\n"
+                )
+
+            # 后台任务：执行 recommend_stream 并将结果放入队列
+            async def _run_recommend():
+                try:
+                    r, stream = await service.recommend_stream(req.message, context, on_progress=collect_progress)
+                    await progress_queue.put((r, stream))
+                except Exception as e:
+                    await progress_queue.put(e)
+
+            task = asyncio.create_task(_run_recommend())
+
+            # 实时消费 progress 事件，直到 recommend_stream 完成
+            result = None
+            reply_stream = None
+            while True:
+                item = await progress_queue.get()
+                if isinstance(item, Exception):
+                    raise item
+                if isinstance(item, tuple) and len(item) == 2:
+                    result, reply_stream = item
+                    break
+                # progress event string — 实时发送给前端
+                yield item
+
+            # 确保后台任务已完成
+            if not task.done():
+                await task
+
+            # 流式发送回复文字
+            if reply_stream is not None:
+                async for chunk in reply_stream:
+                    reply_text += chunk
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+
         except ContentFilteredError:
             result = {
                 "reply": "抱歉，您的请求触发了内容安全策略。请尝试简化描述，例如「推荐计算机课程」。",
                 "recommendations": [],
             }
+            reply_text = result["reply"]
+            yield f"data: {json.dumps({'type': 'token', 'content': reply_text}, ensure_ascii=False)}\n\n"
             degraded = True
         except Exception as e:
             logger.error(f"Recommend failed, using fallback: {type(e).__name__}: {e}")
@@ -174,11 +219,8 @@ async def chat_stream(
             llm = FallbackLLMProvider()
             service = RecommendService(db, llm, session_courses=session_courses)
             result = await service.recommend(req.message, context)
-
-        # 流式发送 reply 字段（模拟流式体验）
-        reply_text = result.get("reply", "")
-        for char in reply_text:
-            yield f"data: {json.dumps({'type': 'token', 'content': char}, ensure_ascii=False)}\n\n"
+            reply_text = result.get("reply", "")
+            yield f"data: {json.dumps({'type': 'token', 'content': reply_text}, ensure_ascii=False)}\n\n"
 
         # 缓存 & 持久化（不缓存降级结果）
         serializable = _serialize_result(result)
