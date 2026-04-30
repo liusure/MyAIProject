@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -162,29 +163,46 @@ async def chat_stream(
             llm = LLMFactory.get_available()
             service = RecommendService(db, llm, session_courses=session_courses)
 
-            # on_progress 回调：发送 progress SSE 事件
-            async def send_progress(stage: str, message: str):
-                yield f"data: {json.dumps({'type': 'progress', 'stage': stage, 'message': message}, ensure_ascii=False)}\n\n"
-
-            # 注意：progress 事件需要在 event_generator 的上下文中 yield
-            # 由于 on_progress 是回调，我们需要收集 progress 事件再发送
-            progress_events: list[str] = []
+            # 使用 asyncio.Queue 实时传递 progress 事件
+            progress_queue: asyncio.Queue = asyncio.Queue()
 
             async def collect_progress(stage: str, message: str):
-                progress_events.append(
+                await progress_queue.put(
                     f"data: {json.dumps({'type': 'progress', 'stage': stage, 'message': message}, ensure_ascii=False)}\n\n"
                 )
 
-            result, reply_stream = await service.recommend_stream(req.message, context, on_progress=collect_progress)
+            # 后台任务：执行 recommend_stream 并将结果放入队列
+            async def _run_recommend():
+                try:
+                    r, stream = await service.recommend_stream(req.message, context, on_progress=collect_progress)
+                    await progress_queue.put((r, stream))
+                except Exception as e:
+                    await progress_queue.put(e)
 
-            # 发送收集到的 progress 事件
-            for evt in progress_events:
-                yield evt
+            task = asyncio.create_task(_run_recommend())
+
+            # 实时消费 progress 事件，直到 recommend_stream 完成
+            result = None
+            reply_stream = None
+            while True:
+                item = await progress_queue.get()
+                if isinstance(item, Exception):
+                    raise item
+                if isinstance(item, tuple) and len(item) == 2:
+                    result, reply_stream = item
+                    break
+                # progress event string — 实时发送给前端
+                yield item
+
+            # 确保后台任务已完成
+            if not task.done():
+                await task
 
             # 流式发送回复文字
-            async for chunk in reply_stream:
-                reply_text += chunk
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+            if reply_stream is not None:
+                async for chunk in reply_stream:
+                    reply_text += chunk
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
 
         except ContentFilteredError:
             result = {

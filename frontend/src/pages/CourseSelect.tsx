@@ -4,25 +4,11 @@ import CourseCard from '../components/CourseCard/CourseCard';
 import ScheduleView from '../components/ScheduleView/ScheduleView';
 import PlanActions from '../components/PlanActions/PlanActions';
 import {FileUpload} from '../components/FileUpload/FileUpload';
-import type {ChatMessage, RecommendationPlan, Course, Conflict, RecommendationProgress} from '../types';
+import type {ChatMessage, RecommendationPlan, Course, RecommendationProgress} from '../types';
 import {chatStream, savePlan, deletePlan, cancelCurrentStream} from '../services/api';
 import {useNavigate} from 'react-router-dom';
-import {mergeCourses} from '../utils/courseMerge';
-
-/** Build bidirectional conflict graph from conflict list */
-function buildConflictGraph(courses: Course[], conflicts: Conflict[]): Map<string, Set<string>> {
-    const graph = new Map<string, Set<string>>();
-    for (const c of courses) {
-        graph.set(c.id, new Set());
-    }
-    for (const conflict of conflicts) {
-        if (conflict.type === 'time') {
-            graph.get(conflict.course_a)?.add(conflict.course_b);
-            graph.get(conflict.course_b)?.add(conflict.course_a);
-        }
-    }
-    return graph;
-}
+import {mergeCourses, mergeCoursesWithMapping} from '../utils/courseMerge';
+import {detectTimeConflicts, buildConflictGraph} from '../utils/conflictDetect';
 
 /** Compute default conflict-free selection: first-seen course in each conflict pair */
 function computeDefaultSelection(courses: Course[], conflictGraph: Map<string, Set<string>>): Set<string> {
@@ -79,12 +65,13 @@ export default function CourseSelect() {
         setPlanStates(new Map());
     }, [recommendations]);
 
-    // Build conflict graphs for each plan
+    // Build conflict graphs for each plan (re-detect after merging to avoid stale IDs)
     const conflictGraphs = useMemo(() => {
         const graphs: Map<string, Set<string>>[] = [];
         for (const plan of recommendations) {
             const merged = mergeCourses(plan.courses);
-            graphs.push(buildConflictGraph(merged, plan.conflicts));
+            const conflicts = detectTimeConflicts(merged);
+            graphs.push(buildConflictGraph(merged, conflicts));
         }
         return graphs;
     }, [recommendations]);
@@ -148,7 +135,7 @@ export default function CourseSelect() {
         setTimeout(() => setToast(null), 2000);
     };
 
-    const handleToggleFavorite = async (plan: RecommendationPlan) => {
+    const handleToggleFavorite = async (plan: RecommendationPlan, selectedCourseIds: string[]) => {
         const key = `${plan.plan_name}-${plan.total_credits}`;
         const savedId = savedPlanIds.get(key);
 
@@ -163,9 +150,8 @@ export default function CourseSelect() {
             });
             showToast('已取消收藏');
         } else {
-            const courseIds = plan.courses.map((c) => c.id);
             try {
-                const saved = await savePlan(plan.plan_name, courseIds);
+                const saved = await savePlan(plan.plan_name, selectedCourseIds);
                 setSavedPlanIds((prev) => new Map(prev).set(key, saved.id));
                 showToast('已收藏，可在"我的方案"中查看');
             } catch { /* ignore */ }
@@ -250,10 +236,13 @@ export default function CourseSelect() {
                     <p style={{color: 'var(--color-text-light)'}}>未找到匹配的课程方案，请尝试调整你的需求描述。</p>
                 ) : (
                     recommendations.map((plan, planIdx) => {
-                        const merged = mergeCourses(plan.courses);
+                        const {merged, idMapping} = mergeCoursesWithMapping(plan.courses);
                         const graph = conflictGraphs[planIdx] || new Map();
                         const state = getPlanState(planIdx, merged, graph);
                         const selectedCourses = merged.filter(c => state.selectedIds.has(c.id));
+                        const selectedConflicts = detectTimeConflicts(selectedCourses);
+                        // 展开选中的合并课程 ID 为原始课程 ID，确保 MyPlans 能正确重建
+                        const selectedOriginalIds = selectedCourses.flatMap(c => idMapping.get(c.id) || [c.id]);
 
                         return (
                             <div key={planIdx} className="recommendation-plan">
@@ -262,7 +251,7 @@ export default function CourseSelect() {
                                     <PlanActions
                                         courses={selectedCourses}
                                         isFavorited={isFavorited(plan)}
-                                        onToggleFavorite={() => handleToggleFavorite(plan)}
+                                        onToggleFavorite={() => handleToggleFavorite(plan, selectedOriginalIds)}
                                     />
                                 </div>
                                 <p>总学分：{plan.total_credits}{categoryCreditsSummary(selectedCourses) && `（${categoryCreditsSummary(selectedCourses)}）`}</p>
@@ -283,7 +272,7 @@ export default function CourseSelect() {
                                         />
                                     ))}
                                 </div>
-                                <ScheduleView courses={selectedCourses} conflicts={plan.conflicts}/>
+                                <ScheduleView courses={selectedCourses} conflicts={selectedConflicts}/>
                             </div>
                         );
                     })
