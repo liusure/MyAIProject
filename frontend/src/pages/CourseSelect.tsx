@@ -239,10 +239,10 @@ export default function CourseSelect() {
                         const {merged, idMapping} = mergeCoursesWithMapping(plan.courses);
                         const graph = conflictGraphs[planIdx] || new Map();
                         const state = getPlanState(planIdx, merged, graph);
-                        const selectedCourses = merged.filter(c => state.selectedIds.has(c.id));
+                        const selectedCourses = merged.filter((c: { id: string; }) => state.selectedIds.has(c.id));
                         const selectedConflicts = detectTimeConflicts(selectedCourses);
                         // 展开选中的合并课程 ID 为原始课程 ID，确保 MyPlans 能正确重建
-                        const selectedOriginalIds = selectedCourses.flatMap(c => idMapping.get(c.id) || [c.id]);
+                        const selectedOriginalIds = selectedCourses.flatMap((c: { id: any; }) => idMapping.get(c.id) || [c.id]);
 
                         return (
                             <div key={planIdx} className="recommendation-plan">
@@ -256,7 +256,7 @@ export default function CourseSelect() {
                                 </div>
                                 <p>总学分：{plan.total_credits}{categoryCreditsSummary(selectedCourses) && `（${categoryCreditsSummary(selectedCourses)}）`}</p>
                                 <div className="course-list">
-                                    {merged.map((course) => (
+                                    {merged.map((course: Course) => (
                                         <CourseCard
                                             key={course.id}
                                             course={course}

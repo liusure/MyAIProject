@@ -1,4 +1,4 @@
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 .venv/
@@ -8,4 +8,3 @@ dist/
 backend/.env
 logs/*.log
 logs/*.log.*
-/backend/alembic/
