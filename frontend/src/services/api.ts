@@ -7,6 +7,7 @@ import type {
   ImportConfirmResponse,
   SessionCourse,
   MappingResult,
+  RecommendationProgress,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -40,7 +41,7 @@ export interface ChatResponse {
 
 export interface StreamCallbacks {
   onToken: (content: string) => void;
-  onProgress?: (stage: string, message: string) => void;
+  onProgress?: (stage: RecommendationProgress['stage'], message: string) => void;
   onDone: (result: ChatResponse) => void;
   onError: (error: Error) => void;
 }

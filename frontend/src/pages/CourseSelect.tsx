@@ -172,13 +172,13 @@ export default function CourseSelect() {
         setProgressMessages([]);
 
         await chatStream(message, conversationId, {
-            onProgress: (stage, message) => {
+            onProgress: (stage, progressMessage) => {
                 setProgressMessages((prev) => {
                     const existing = prev.find((p) => p.stage === stage);
                     if (existing) {
-                        return prev.map((p) => (p.stage === stage ? {stage, message} : p));
+                        return prev.map((p) => (p.stage === stage ? {stage, message: progressMessage} : p));
                     }
-                    return [...prev, {stage, message}];
+                    return [...prev, {stage, message: progressMessage}];
                 });
             },
             onToken: (content) => {
