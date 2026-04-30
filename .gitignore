@@ -5,6 +5,7 @@ __pycache__/
 venv/
 dist/
 *.egg-info/
-.env
+backend/.env
 logs/*.log
 logs/*.log.*
+node_modules
