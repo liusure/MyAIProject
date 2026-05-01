@@ -154,8 +154,6 @@ export const listPlans = () =>
 export const deletePlan = (plan_id: string) =>
   request<void>(`/plans/${plan_id}`, { method: 'DELETE' });
 
-export const exportPlan = (plan_id: string) =>
-  `${API_BASE}/plans/${plan_id}/export`;
 
 // Import
 export const uploadAnalyze = async (file: File): Promise<ImportAnalyzeResponse> => {

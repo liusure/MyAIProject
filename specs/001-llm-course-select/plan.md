@@ -10,7 +10,7 @@
 ## 技术上下文
 
 **语言/版本**：Python 3.12（后端）、TypeScript 5.x（前端）
-**主要依赖**：FastAPI、SQLAlchemy 2.x、Alembic、React 18、Vite、MiMo SDK、WeasyPrint（PDF 导出）
+**主要依赖**：FastAPI、SQLAlchemy 2.x、Alembic、React 18、Vite、MiMo SDK、客户端 TXT 导出
 **存储**：PostgreSQL 16
 **测试**：pytest（后端）、Jest + React Testing Library（前端）
 **目标平台**：Linux 服务器（后端部署）、现代浏览器（前端）
@@ -93,7 +93,6 @@ backend/
 │   │   ├── rule_validator.py # 规则校验
 │   │   ├── conversation.py   # 对话业务逻辑
 │   │   ├── audit.py          # 操作日志
-│   │   └── pdf_export.py     # PDF 导出
 │   ├── models/               # 数据层（SQLAlchemy ORM）
 │   │   ├── __init__.py
 │   │   ├── student.py

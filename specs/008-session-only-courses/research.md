@@ -22,7 +22,7 @@
 
 ## Decision 3: courses 表保留但不再作为推荐来源
 
-**Decision**: 保留 `courses` 表和 `Course` 模型不动，但移除 `RecommendService` 对它的读取。`CourseSearchService` 和 `PDFExportService` 如果仍需要可以保留，但本 feature 不涉及这些功能。
+**Decision**: 保留 `courses` 表和 `Course` 模型不动，但移除 `RecommendService` 对它的读取。`CourseSearchService` 如果仍需要可以保留，但本 feature 不涉及这些功能。
 
 **Rationale**: 最小改动。删除 courses 表需要数据库迁移，且可能影响其他尚未迁移的功能。仅移除推荐服务的依赖即可。
 

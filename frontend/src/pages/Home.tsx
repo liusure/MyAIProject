@@ -2,7 +2,7 @@ export default function Home() {
   return (
     <div className="home-page">
       <h1>AI 智能选课推荐系统</h1>
-      <p>通过自然语言描述你的选课偏好，AI 为你推荐最优课程方案，自动检测冲突，一键导出 PDF。</p>
+      <p>通过自然语言描述你的选课偏好，AI 为你推荐最优课程方案，自动检测冲突，一键导出 TXT。</p>
 
       <div className="features">
         <div className="feature-card">
@@ -15,7 +15,7 @@ export default function Home() {
         </div>
         <div className="feature-card">
           <h3>方案收藏与导出</h3>
-          <p>收藏满意的推荐方案，导出 PDF 文件，选课开放时快速对照操作。</p>
+          <p>收藏满意的推荐方案，导出 TXT 文件，选课开放时快速对照操作。</p>
         </div>
       </div>
     </div>

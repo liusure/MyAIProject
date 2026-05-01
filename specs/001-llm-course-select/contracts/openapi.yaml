@@ -139,8 +139,8 @@ paths:
 
   /plans/{plan_id}/export:
     get:
-      summary: 导出方案为 PDF
-      description: 将收藏的方案导出为 PDF 文件（FR-05）
+      summary: 导出方案为 TXT
+      description: 将收藏的方案导出为 TXT 文件（FR-05）
       operationId: exportPlan
       tags: [方案]
       parameters:
@@ -152,9 +152,9 @@ paths:
             format: uuid
       responses:
         '200':
-          description: PDF 文件
+          description: TXT 文件
           content:
-            application/pdf:
+            application/txt:
               schema:
                 type: string
                 format: binary

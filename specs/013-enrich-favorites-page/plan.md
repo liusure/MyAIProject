@@ -5,7 +5,6 @@
 
 ## Summary
 
-Three frontend-only changes: (1) show course count and weekly period total on each saved plan card, (2) replace PDF export with client-side TXT export, (3) preserve page state on navigation using React Router layout routes.
 
 ## Technical Context
 

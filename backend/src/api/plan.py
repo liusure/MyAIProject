@@ -8,7 +8,6 @@ from src.core.database import get_db
 from src.core.security import get_or_create_device
 from src.schemas.plan import SavedPlanCreate, SavedPlanResponse, SavedPlanList
 from src.services.plan_service import PlanService
-from src.services.pdf_export import PDFExportService
 from src.services.session_store import SessionStore
 
 router = APIRouter(prefix="/plans", tags=["方案"])
@@ -81,23 +80,3 @@ async def delete_plan(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="方案不存在")
 
 
-@router.get("/{plan_id}/export")
-async def export_plan(
-    plan_id: uuid.UUID,
-    response: Response,
-    device_id: Annotated[str, Depends(get_or_create_device)],
-    db: AsyncSession = Depends(get_db),
-):
-    service = PlanService(db)
-    plan = await service.get(plan_id)
-    if not plan or plan.device_id != device_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="方案不存在")
-
-    pdf_service = PDFExportService(db)
-    pdf_bytes = await pdf_service.export_plan(plan)
-
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{plan.name}.pdf"'},
-    )
